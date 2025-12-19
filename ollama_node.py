@@ -55,6 +55,8 @@ class OllamaLLMNode:
             result = response.json()
             generated_text = result.get("response", "")
             
+            print(f"Ollama Generated Text: {generated_text}")
+            
             return {"ui": {"text": [generated_text]}, "result": (generated_text,)}
             
         except requests.exceptions.RequestException as e:
