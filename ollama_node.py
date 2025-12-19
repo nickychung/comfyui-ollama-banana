@@ -27,6 +27,7 @@ class OllamaLLMNode:
     RETURN_NAMES = ("text",)
     FUNCTION = "generate_text"
     CATEGORY = "Ollama"
+    OUTPUT_NODE = True
 
     def generate_text(self, prompt, model, url, keep_alive, seed=None):
         """
@@ -54,11 +55,11 @@ class OllamaLLMNode:
             result = response.json()
             generated_text = result.get("response", "")
             
-            return (generated_text,)
+            return {"ui": {"text": [generated_text]}, "result": (generated_text,)}
             
         except requests.exceptions.RequestException as e:
-            return (f"Error: {str(e)}",)
+            return {"ui": {"text": [f"Error: {str(e)}"]}, "result": (f"Error: {str(e)}",)}
         except json.JSONDecodeError:
-            return ("Error: Failed to decode JSON response from Ollama.",)
+             return {"ui": {"text": ["Error: Failed to decode JSON response from Ollama."]}, "result": ("Error: Failed to decode JSON response from Ollama.",)}
         except Exception as e:
-            return (f"Error: An unexpected error occurred: {str(e)}",)
+             return {"ui": {"text": [f"Error: An unexpected error occurred: {str(e)}"]}, "result": (f"Error: An unexpected error occurred: {str(e)}",)}
