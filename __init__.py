@@ -8,4 +8,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OllamaLLMNode": "Ollama LLM"
 }
 
-WEB_DIRECTORY = "./js"
+WEB_DIRECTORY = "js"

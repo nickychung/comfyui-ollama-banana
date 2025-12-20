@@ -1,6 +1,7 @@
 app.registerExtension({
     name: "Comfy.OllamaLLMNode",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        console.log("Loading Ollama Node Extension...");
         if (nodeData.name === "OllamaLLMNode") {
             // 1. Add the widget immediately when the node is created
             const onNodeCreated = nodeType.prototype.onNodeCreated;
