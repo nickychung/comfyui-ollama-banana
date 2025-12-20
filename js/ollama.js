@@ -1,9 +1,9 @@
 import { app } from "../../scripts/app.js";
+import { ComfyWidgets } from "../../scripts/widgets.js";
 
 app.registerExtension({
     name: "Comfy.OllamaLLMNode",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        console.log("Loading Ollama Node Extension...");
         if (nodeData.name === "OllamaLLMNode") {
             // 1. Add the widget immediately when the node is created
             const onNodeCreated = nodeType.prototype.onNodeCreated;
@@ -12,13 +12,17 @@ app.registerExtension({
 
                 // Create the widget if it doesn't exist
                 if (!this.widgets || !this.widgets.find(w => w.name === "generated_text")) {
-                    const w = this.addWidget("text", "generated_text", "", (v) => { }, { multiline: true });
-                    // Standard widgets don't have inputEl immediately available or at all
-                    // We'll just accept it's editable for now, or use a custom widget type if needed later.
+                    // Use ComfyWidgets to create a DOM-based text widget (like the prompt box)
+                    // Signature: STRING(node, inputName, inputData, app)
+                    const w = ComfyWidgets.STRING(this, "generated_text", ["STRING", { multiline: true }], app).widget;
+
+                    // Now inputEl should be available because it's a DOM widget
+                    w.inputEl.readOnly = true;
+                    w.inputEl.style.opacity = 0.6;
                 }
 
-                // Make sure it's resized specifically for multiline
-                this.setSize([this.size[0], Math.max(this.size[1], 900)]);
+                // Resize node to be tall enough for output
+                this.setSize([this.size[0], Math.max(this.size[1], 300)]);
             };
 
             // 2. Update the widget when the node executes
