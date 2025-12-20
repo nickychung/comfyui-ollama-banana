@@ -1,37 +1,39 @@
 app.registerExtension({
-	name: "Comfy.OllamaLLMNode",
-	async beforeRegisterNodeDef(nodeType, nodeData, app) {
-		if (nodeData.name === "OllamaLLMNode") {
-			const onExecuted = nodeType.prototype.onExecuted;
-			nodeType.prototype.onExecuted = function (message) {
-				onExecuted?.apply(this, arguments);
-                
-                // message is what we return in "ui" from python
-                // python returns: {"ui": {"text": [text]}, ...}
-                
-				if (message && message.text && message.text.length > 0) {
-					const text = message.text[0];
-                    
-                    // Try to find a widget named "generated_text"
+    name: "Comfy.OllamaLLMNode",
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name === "OllamaLLMNode") {
+            // 1. Add the widget immediately when the node is created
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                // Create the widget if it doesn't exist
+                if (!this.widgets || !this.widgets.find(w => w.name === "generated_text")) {
+                    const w = this.addWidget("text", "generated_text", "", (v) => { }, { multiline: true });
+                    w.inputEl.readOnly = true;
+                    w.inputEl.style.opacity = 0.6;
+                }
+
+                // Make sure it's resized specifically for multiline
+                this.setSize([this.size[0], Math.max(this.size[1], 150)]);
+            };
+
+            // 2. Update the widget when the node executes
+            const onExecuted = nodeType.prototype.onExecuted;
+            nodeType.prototype.onExecuted = function (message) {
+                onExecuted?.apply(this, arguments);
+
+                if (message && message.text && message.text.length > 0) {
+                    const text = message.text[0];
                     const widget = this.widgets?.find((w) => w.name === "generated_text");
-                    
+
                     if (widget) {
                         widget.value = text;
-                    } else {
-                        // If it doesn't exist, create it.
-                        // We use a custom widget or standard string widget.
-                        // Note: ComfyUI widgets created dynamically might not save properly, but for display it's fine.
-                        // Ideally, we define it in Python, but Python can't easily define 'output' widgets.
-                        
-                         const w = this.addWidget("text", "generated_text", text, (v) => {}, { multiline: true });
-                         w.inputEl.readOnly = true;
-                         w.inputEl.style.opacity = 0.6;
                     }
-                    
-                    // Force a redraw
-                    this.setDirtyCanvas(true, true);
-				}
-			};
-		}
-	},
+
+                    this.onResize?.(this.size);
+                }
+            };
+        }
+    },
 });
