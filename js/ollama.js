@@ -13,8 +13,8 @@ app.registerExtension({
                 // Create the widget if it doesn't exist
                 if (!this.widgets || !this.widgets.find(w => w.name === "generated_text")) {
                     const w = this.addWidget("text", "generated_text", "", (v) => { }, { multiline: true });
-                    w.inputEl.readOnly = true;
-                    w.inputEl.style.opacity = 0.6;
+                    // Standard widgets don't have inputEl immediately available or at all
+                    // We'll just accept it's editable for now, or use a custom widget type if needed later.
                 }
 
                 // Make sure it's resized specifically for multiline
