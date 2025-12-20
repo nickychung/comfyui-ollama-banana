@@ -24,7 +24,7 @@ class OllamaLLMNode:
         }
 
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
+    RETURN_NAMES = ("Prompt",)
     FUNCTION = "generate_text"
     CATEGORY = "Ollama"
     OUTPUT_NODE = True
