@@ -18,7 +18,7 @@ app.registerExtension({
                 }
 
                 // Make sure it's resized specifically for multiline
-                this.setSize([this.size[0], Math.max(this.size[1], 150)]);
+                this.setSize([this.size[0], Math.max(this.size[1], 900)]);
             };
 
             // 2. Update the widget when the node executes
