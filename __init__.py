@@ -1,11 +1,13 @@
-from .ollama_node import OllamaLLMNode
+from .ollama_node import OllamaLLMNode, OllamaNbpCharacter
 
 NODE_CLASS_MAPPINGS = {
-    "OllamaLLMNode": OllamaLLMNode
+    "OllamaLLMNode": OllamaLLMNode,
+    "OllamaNbpCharacter": OllamaNbpCharacter
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "OllamaLLMNode": "Ollama LLM"
+    "OllamaLLMNode": "Ollama LLM",
+    "OllamaNbpCharacter": "Ollama NBP Character"
 }
 
 WEB_DIRECTORY = "js"
