@@ -184,6 +184,9 @@ class OllamaNbpCharacter:
         # Add granular Save toggles
         for key in element_map.keys():
             inputs["optional"][f"save_{key}"] = ("BOOLEAN", {"default": False, "label_on": f"Save {key}", "label_off": f"Don't Save {key}"})
+            
+        # Add "Save Full Prompt" toggle
+        inputs["optional"]["save_full_prompt"] = ("BOOLEAN", {"default": False, "label_on": "Save Full Prompt to all.txt", "label_off": "Don't Save Full Prompt"})
 
         return inputs
 
@@ -387,6 +390,23 @@ class OllamaNbpCharacter:
                 should_save = kwargs.get(f"save_{key}", False)
                 if should_save:
                     self._save_option(key, generated_data[key])
+        
+        # 3b. Save Full Prompt Logic
+        if kwargs.get("save_full_prompt", False):
+            all_file_path = os.path.join(self.elements_dir, "all.txt")
+            
+            # Simple separator
+            separator = "\n" + "="*60 + "\n"
+            
+            # Create if missing
+            if not os.path.exists(all_file_path):
+                with open(all_file_path, "w", encoding="utf-8") as f:
+                    pass
+            
+            # Assemble the full text first (we do this below, but we need it now for saving)
+            # Let's ensure 'final_elements' is fully populated before this block?
+            # Actually, let's move this block AFTER step 4.
+            pass
 
         # 4. Assemble Final Prompt
         for key in to_generate_theme + to_generate_random:
@@ -404,8 +424,24 @@ class OllamaNbpCharacter:
                 if val and val.strip():
                     prompt_parts.append(f"{name}: {val}")
         
+        
         full_text = "\n".join(prompt_parts)
         
+        # 5. Save Full Prompt (Moved here to have access to full_text)
+        if kwargs.get("save_full_prompt", False):
+            all_file_path = os.path.join(self.elements_dir, "all.txt")
+            separator = "\n" + "="*60 + "\n"
+            
+            try:
+                with open(all_file_path, "a", encoding="utf-8") as f:
+                    f.write(separator)
+                    f.write(f"Theme: {theme}\n") # context
+                    f.write(full_text)
+                    f.write("\n")
+                print(f"[OllamaNbpCharacter] Saved full prompt to all.txt")
+            except Exception as e:
+                print(f"[OllamaNbpCharacter] Error saving to all.txt: {e}")
+
         print(f"Ollama NBP Character Final: {full_text}")
         
         return {"ui": {"text": [full_text]}, "result": (full_text,)}
