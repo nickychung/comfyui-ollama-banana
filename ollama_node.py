@@ -188,7 +188,7 @@ class OllamaNbpCharacter:
         """
         Generates a character prompt using the Ollama API with structured inputs.
         """
-        import re # Import locally to avoid top-level dependency issues if re not standard (it is standard)
+        import re 
 
         api_url = f"{url}/api/generate"
         
@@ -197,7 +197,7 @@ class OllamaNbpCharacter:
         to_generate_theme = []
         to_generate_random = []
         
-        # Map snake_case to Title Case
+        # Map snake_case to Title Case (Used for Prompting and Parsing)
         display_names = {
             "subject": "Subject",
             "composition": "Composition",
@@ -210,6 +210,9 @@ class OllamaNbpCharacter:
             "factual_constraints": "Factual constraints"
         }
         
+        # Reverse map for parsing (Title -> snake_case)
+        title_to_key = {v.lower(): k for k, v in display_names.items()}
+
         for key in self.ELEMENT_INPUTS:
             input_val = kwargs.get(f"{key}_input", "Skip")
             
@@ -227,54 +230,44 @@ class OllamaNbpCharacter:
         generated_data = {}
         
         if to_generate_theme or to_generate_random:
-            # Construct system prompt with detailed definitions AND strict JSON requirement
+            # Construct system prompt (Text based, robust to chatty models)
             system_instruction = (
                 "You are an expert at creating detailed image generation prompts.\n"
-                "Your task is to generate structured prompt elements based on a user Theme or Randomly.\n\n"
+                "Your task is to generate structured prompt elements based on a user Theme or Randomly.\n"
+                "Do NOT output conversational fillers like 'Here is the prompt'. Just output the fields.\n\n"
                 "DEFINITIONS:\n"
-                "• Subject: Who or what is in the image? Be specific. (e.g., a stoic robot barista).\n"
+                "• Subject: Who or what is in the image? Be specific.\n"
                 "• Composition: How is the shot framed? (e.g., extreme close-up, wide shot).\n"
-                "• Action: What is happening? (e.g., brewing coffee, casting a spell).\n"
-                "• Location: Where does the scene take place? (e.g., futuristic cafe).\n"
-                "• Style: Aesthetic style? (e.g., 3D animation, film noir, photorealistic).\n"
-                "• Editing Instructions: Specific changes (e.g., change tie to green).\n"
-                "• Camera and lighting details: (e.g., low-angle shot, f/1.8, golden hour).\n"
-                "• Specific text integration: Text to appear in image (e.g., 'URBAN EXPLORER' sign).\n"
-                "• Factual constraints: Accuracy requirements (e.g., historically accurate).\n"
-                "\n"
-                "INSTRUCTIONS:\n"
-                "1. Output valid JSON only.\n"
-                "2. No markdown, no explanations, no conversational filler.\n"
-                "3. Ensure strictly valid JSON format.\n"
+                "• Action: What is happening?\n"
+                "• Location: Where does the scene take place?\n"
+                "• Style: Aesthetic style? (e.g., 3D animation, film noir).\n"
+                "• Editing Instructions: Specific changes.\n"
+                "• Camera and lighting details: (e.g., f/1.8, golden hour).\n"
+                "• Specific text integration: Text to appear in image.\n"
+                "• Factual constraints: Accuracy requirements.\n\n"
             )
             
-            user_instruction = f"Context Theme: {theme}\n\nREQUIRED ELEMENTS:\n"
+            user_instruction = f"Context Theme: {theme}\n\nREQUIRED OUTPUT FORMAT:\n"
             
-            # Build the expected keys list for the model
-            expected_keys_json = []
+            # Build the request list
             if to_generate_theme:
                 user_instruction += "Generate based on Theme:\n"
                 for key in to_generate_theme:
-                    user_instruction += f"- {key} ({display_names[key]})\n"
-                    expected_keys_json.append(f'  "{key}": "generated content..."')
+                    user_instruction += f"{display_names[key]}:\n"
             
             if to_generate_random:
                 user_instruction += "Generate Randomly (Ignore Theme):\n"
                 for key in to_generate_random:
-                    user_instruction += f"- {key} ({display_names[key]})\n"
-                    expected_keys_json.append(f'  "{key}": "random content..."')
+                    user_instruction += f"{display_names[key]}:\n"
             
-            # Add Example Structure to guide the model
-            user_instruction += "\nOutput this EXACT JSON Structure (filled with content):\n{\n"
-            user_instruction += ",\n".join(expected_keys_json)
-            user_instruction += "\n}\n\nResponse:"
+            user_instruction += "\nResponse:"
 
             payload = {
                 "model": model,
                 "prompt": system_instruction + user_instruction,
                 "stream": False,
-                "keep_alive": f"{keep_alive}m",
-                "format": "json"
+                "keep_alive": f"{keep_alive}m"
+                # Removed "format": "json" to allow natural text generation
             }
             
             if seed is not None:
@@ -286,37 +279,81 @@ class OllamaNbpCharacter:
                 result_json = response.json()
                 content = result_json.get("response", "")
                 
-                # Robust JSON Extraction using Regex
-                # Finds the first valid { ... } block
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                print(f"Ollama Raw Output: {content}")
+
+                # Robust Text Extraction using Regex
+                # We look for "Key: Value" or "Key:\nValue" patterns
                 
-                if json_match:
-                    json_str = json_match.group(0)
-                    try:
-                        data = json.loads(json_str)
-                        # Normalize keys helpers
-                        def normalize(k): return k.lower().replace(" ", "_")
+                # Check for each key we requested
+                all_requested = to_generate_theme + to_generate_random
+                
+                for key in all_requested:
+                    display_name = display_names[key]
+                    # Regex explanation:
+                    # 1. match the Display Name literally
+                    # 2. match optional colon and whitespace
+                    # 3. capture everything until the next newline that looks like a new header OR end of string
+                    # Note: We assume headers are at start of lines.
+                    
+                    # Pattern: header followed by content, until next header or end
+                    # We iterate lines to be safer against regex complexity
+                    pass 
+                
+                # Simple Line Parser Strategy
+                # Split by newlines, identify lines that start with a known header
+                lines = content.split('\n')
+                current_key = None
+                buffer = []
+                
+                def save_buffer(k, buf):
+                    if k and buf:
+                        generated_data[k] = " ".join(buf).strip()
+                
+                # Create a lookup for headers to keys
+                # e.g. "Subject" -> "subject", "Subject:" -> "subject"
+                header_map = {}
+                for k, v in display_names.items():
+                    header_map[v.lower()] = k
+                    header_map[v.lower() + ":"] = k
+
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
                         
-                        for key, val in data.items():
-                            norm_key = normalize(key)
-                            # Try to match to our keys
-                            matched = False
-                            for real_key in self.ELEMENT_INPUTS:
-                                if real_key == norm_key or normalize(display_names[real_key]) == norm_key:
-                                    generated_data[real_key] = val
-                                    matched = True
-                                    break
-                            # Fuzzy match
-                            if not matched:
-                                 for real_key in self.ELEMENT_INPUTS:
-                                     if real_key in norm_key:
-                                         generated_data[real_key] = val
-                                         matched = True
-                                         break
-                    except json.JSONDecodeError:
-                        print(f"Ollama JSON Decode Error. Content found but invalid: {json_str}")
-                else:
-                    print(f"Ollama JSON Error. No JSON object found in output: {content}")
+                    # Check if this line starts with a known header
+                    # Sort headers by length descending to match longest first ("Camera..." vs "Camera")
+                    is_header = False
+                    line_lower = line.lower()
+                    
+                    for header_str, key_id in header_map.items():
+                        # We check if line STARTS with header_str (case insensitive match logic)
+                        # clean check:
+                        if line_lower.startswith(header_str.lower()):
+                            # It's a header line. Save previous buffer.
+                            save_buffer(current_key, buffer)
+                            current_key = key_id
+                            buffer = []
+                            
+                            # Content might be on the same line "Subject: Robot"
+                            # Strip the header part
+                            remainder = line[len(header_str):].strip()
+                            # remove leading colon if header_str didn't have it (fuzzy match)
+                            if remainder.startswith(":"):
+                                remainder = remainder[1:].strip()
+                            
+                            if remainder:
+                                buffer.append(remainder)
+                            is_header = True
+                            break
+                    
+                    if not is_header:
+                        # Append to current buffer if we have a key
+                        if current_key:
+                            buffer.append(line)
+                            
+                # Save the last one
+                save_buffer(current_key, buffer)
 
             except Exception as e:
                 print(f"Ollama API Error: {e}")
