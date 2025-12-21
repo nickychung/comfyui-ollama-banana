@@ -227,26 +227,47 @@ class OllamaNbpCharacter:
         generated_data = {}
         
         if to_generate_theme or to_generate_random:
-            # Construct system prompt with stronger constraints and example
+            # Construct system prompt with detailed definitions AND strict JSON requirement
             system_instruction = (
-                "You are a strict JSON generator. You explicitly do NOT output conversational text.\n"
-                "Task: Generate a JSON object containing image prompt elements.\n"
-                f"Theme Context: {theme}\n\n"
+                "You are an expert at creating detailed image generation prompts.\n"
+                "Your task is to generate structured prompt elements based on a user Theme or Randomly.\n\n"
+                "DEFINITIONS:\n"
+                "• Subject: Who or what is in the image? Be specific. (e.g., a stoic robot barista).\n"
+                "• Composition: How is the shot framed? (e.g., extreme close-up, wide shot).\n"
+                "• Action: What is happening? (e.g., brewing coffee, casting a spell).\n"
+                "• Location: Where does the scene take place? (e.g., futuristic cafe).\n"
+                "• Style: Aesthetic style? (e.g., 3D animation, film noir, photorealistic).\n"
+                "• Editing Instructions: Specific changes (e.g., change tie to green).\n"
+                "• Camera and lighting details: (e.g., low-angle shot, f/1.8, golden hour).\n"
+                "• Specific text integration: Text to appear in image (e.g., 'URBAN EXPLORER' sign).\n"
+                "• Factual constraints: Accuracy requirements (e.g., historically accurate).\n"
+                "\n"
+                "INSTRUCTIONS:\n"
+                "1. Output valid JSON only.\n"
+                "2. No markdown, no explanations, no conversational filler.\n"
+                "3. Ensure strictly valid JSON format.\n"
             )
             
-            user_instruction = "REQUIRED JSON STRUCTURE:\n{\n"
+            user_instruction = f"Context Theme: {theme}\n\nREQUIRED ELEMENTS:\n"
             
             # Build the expected keys list for the model
-            expected_keys = []
+            expected_keys_json = []
             if to_generate_theme:
+                user_instruction += "Generate based on Theme:\n"
                 for key in to_generate_theme:
-                    expected_keys.append(f'  "{key}": "content based on theme"')
-            if to_generate_random:
-                for key in to_generate_random:
-                    expected_keys.append(f'  "{key}": "random content"')
+                    user_instruction += f"- {key} ({display_names[key]})\n"
+                    expected_keys_json.append(f'  "{key}": "generated content..."')
             
-            user_instruction += ",\n".join(expected_keys)
-            user_instruction += "\n}\n\nResponse (JSON ONLY):"
+            if to_generate_random:
+                user_instruction += "Generate Randomly (Ignore Theme):\n"
+                for key in to_generate_random:
+                    user_instruction += f"- {key} ({display_names[key]})\n"
+                    expected_keys_json.append(f'  "{key}": "random content..."')
+            
+            # Add Example Structure to guide the model
+            user_instruction += "\nOutput this EXACT JSON Structure (filled with content):\n{\n"
+            user_instruction += ",\n".join(expected_keys_json)
+            user_instruction += "\n}\n\nResponse:"
 
             payload = {
                 "model": model,
