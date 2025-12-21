@@ -188,6 +188,8 @@ class OllamaNbpCharacter:
         """
         Generates a character prompt using the Ollama API with structured inputs.
         """
+        import re # Import locally to avoid top-level dependency issues if re not standard (it is standard)
+
         api_url = f"{url}/api/generate"
         
         # 1. Parse Inputs & Identify Generation Needs
@@ -225,31 +227,30 @@ class OllamaNbpCharacter:
         generated_data = {}
         
         if to_generate_theme or to_generate_random:
-            # Construct system prompt
+            # Construct system prompt with stronger constraints and example
             system_instruction = (
-                "You are an expert image prompt generator. "
-                "Output ONLY a valid JSON object. Do not include markdown formatting, explanations, or code blocks.\\n"
-                "The JSON keys must be exactly the element names requested below.\\n"
-                f"Theme Context: {theme}\\n\\n"
+                "You are a strict JSON generator. You explicitly do NOT output conversational text.\n"
+                "Task: Generate a JSON object containing image prompt elements.\n"
+                f"Theme Context: {theme}\n\n"
             )
             
-            user_instruction = "Generate content for the following elements:\\n"
+            user_instruction = "REQUIRED JSON STRUCTURE:\n{\n"
             
+            # Build the expected keys list for the model
+            expected_keys = []
             if to_generate_theme:
-                user_instruction += "BASED ON THE THEME:\\n"
                 for key in to_generate_theme:
-                    user_instruction += f"- {key} ({display_names[key]})\\n"
-            
+                    expected_keys.append(f'  "{key}": "content based on theme"')
             if to_generate_random:
-                user_instruction += "\\nCOMPLETELY RANDOM (Ignore Theme):\\n"
                 for key in to_generate_random:
-                    user_instruction += f"- {key} ({display_names[key]})\\n"
+                    expected_keys.append(f'  "{key}": "random content"')
             
-            user_instruction += "\\nOutput Format JSON: { \"element_name\": \"content\" }"
+            user_instruction += ",\n".join(expected_keys)
+            user_instruction += "\n}\n\nResponse (JSON ONLY):"
 
             payload = {
                 "model": model,
-                "prompt": system_instruction + user_instruction + "\\n\\nJSON:",
+                "prompt": system_instruction + user_instruction,
                 "stream": False,
                 "keep_alive": f"{keep_alive}m",
                 "format": "json"
@@ -264,32 +265,37 @@ class OllamaNbpCharacter:
                 result_json = response.json()
                 content = result_json.get("response", "")
                 
-                # Try to parse JSON
-                try:
-                    data = json.loads(content)
-                    # Normalize keys helpers
-                    def normalize(k): return k.lower().replace(" ", "_")
-                    
-                    for key, val in data.items():
-                        norm_key = normalize(key)
-                        # Try to match to our keys
-                        matched = False
-                        for real_key in self.ELEMENT_INPUTS:
-                            if real_key == norm_key or normalize(display_names[real_key]) == norm_key:
-                                generated_data[real_key] = val
-                                matched = True
-                                break
-                        # If not exact match, try fuzzy (substring)
-                        if not matched:
-                             for real_key in self.ELEMENT_INPUTS:
-                                 if real_key in norm_key: # e.g. "subject_description" -> "subject"
-                                     generated_data[real_key] = val
-                                     matched = True
-                                     break
-                except json.JSONDecodeError:
-                    print(f"Ollama JSON Decode Error. Raw output: {content}")
-                    # Could try to recover if it's text but not JSON, but simplest is to fail element this time.
-                    pass
+                # Robust JSON Extraction using Regex
+                # Finds the first valid { ... } block
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                
+                if json_match:
+                    json_str = json_match.group(0)
+                    try:
+                        data = json.loads(json_str)
+                        # Normalize keys helpers
+                        def normalize(k): return k.lower().replace(" ", "_")
+                        
+                        for key, val in data.items():
+                            norm_key = normalize(key)
+                            # Try to match to our keys
+                            matched = False
+                            for real_key in self.ELEMENT_INPUTS:
+                                if real_key == norm_key or normalize(display_names[real_key]) == norm_key:
+                                    generated_data[real_key] = val
+                                    matched = True
+                                    break
+                            # Fuzzy match
+                            if not matched:
+                                 for real_key in self.ELEMENT_INPUTS:
+                                     if real_key in norm_key:
+                                         generated_data[real_key] = val
+                                         matched = True
+                                         break
+                    except json.JSONDecodeError:
+                        print(f"Ollama JSON Decode Error. Content found but invalid: {json_str}")
+                else:
+                    print(f"Ollama JSON Error. No JSON object found in output: {content}")
 
             except Exception as e:
                 print(f"Ollama API Error: {e}")
@@ -304,13 +310,10 @@ class OllamaNbpCharacter:
                     self._save_option(key, generated_data[key])
 
         # 4. Assemble Final Prompt
-        # Merge map
         for key in to_generate_theme + to_generate_random:
             if key in generated_data:
                 final_elements[key] = generated_data[key]
             else:
-                 # If we requested it but didn't get it (error), we might default to empty or retry?
-                 # Empty is safer than crashing.
                  final_elements[key] = ""
 
         # Order matters
@@ -322,7 +325,7 @@ class OllamaNbpCharacter:
                 if val and val.strip():
                     prompt_parts.append(f"{name}: {val}")
         
-        full_text = "\\n".join(prompt_parts)
+        full_text = "\n".join(prompt_parts)
         
         print(f"Ollama NBP Character Final: {full_text}")
         
