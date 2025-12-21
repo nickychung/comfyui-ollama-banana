@@ -100,8 +100,8 @@ class OllamaNbpCharacter:
 
     def _save_option(self, element_key, content):
         """Appends a new option to the corresponding text file."""
-        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        file_path = os.path.join(elements_dir, self.ELEMENT_FILES[element_key])
+        
+        file_path = os.path.join(self.elements_dir, self.ELEMENT_FILES[element_key])
         
         # Check for duplicates (simple check)
         existing = set()
@@ -114,6 +114,12 @@ class OllamaNbpCharacter:
             with open(file_path, "a", encoding="utf-8") as f:
                 f.write(f"{content}\n")
             print(f"[OllamaNbpCharacter] Saved new {element_key}: {content}")
+            
+            # Emit event to frontend
+            PromptServer.instance.send_sync("ollama.option_saved", {
+                "element": element_key, 
+                "content": content
+            })
 
     @classmethod
     def INPUT_TYPES(s):

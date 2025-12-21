@@ -44,3 +44,35 @@ app.registerExtension({
         }
     },
 });
+
+import { api } from "../../scripts/api.js";
+
+api.addEventListener("ollama.option_saved", (event) => {
+    const { element, content } = event.detail;
+    if (!element || !content) return;
+
+    // Map element key to input name (e.g., "subject" -> "subject_input")
+    const widgetName = `${element}_input`;
+
+    // Find all OllamaNbpCharacter nodes
+    const graph = app.graph;
+    if (!graph) return;
+
+    graph.findNodesByType("OllamaNbpCharacter").forEach((node) => {
+        const widget = node.widgets?.find((w) => w.name === widgetName);
+        if (widget) {
+            // Check if it's a combo/dropdown widget
+            if (widget.type === "combo" || Array.isArray(widget.options?.values)) {
+                const values = widget.options.values;
+                // Add if not exists
+                if (!values.includes(content)) {
+                    values.push(content);
+                    // Optionally set it as current value?
+                    // user might prefer it stays on what it was, or switches.
+                    // For now, just adding it to the list is safer.
+                    console.log(`[Ollama] Updated ${widgetName} with new option:`, content);
+                }
+            }
+        }
+    });
+});
