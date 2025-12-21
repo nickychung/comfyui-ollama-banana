@@ -256,7 +256,6 @@ class OllamaNbpCharacter:
                 "Camera and lighting details: Shot on Kodak Portra 400 film. The scene is lit by the warm, soft glow of a vintage desk lamp on the vanity, creating deep shadows and intimate highlights on her décolletage and the metallic hair highlights.\n"
                 "Specific text integration: N/A\n"
                 "Factual constraints (for diagrams): N/A\n"
-                "Reference inputs: Use the uploaded picture for face consistency: KEEP all facial features EXACTLY the SAME as the uploaded picture. Do not alter identity, age, face shape, or expression.\n"
                 "\n"
             )
             
