@@ -76,3 +76,70 @@ api.addEventListener("ollama.option_saved", (event) => {
         }
     });
 });
+
+app.registerExtension({
+    name: "Comfy.OllamaCharacterRestore",
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name === "OllamaCharacterRestore") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+
+                const sourceWidget = this.widgets.find((w) => w.name === "source_file");
+                const promptsWidget = this.widgets.find((w) => w.name === "saved_prompts");
+
+                if (sourceWidget && promptsWidget) {
+                    // Callback when source file changes
+                    sourceWidget.callback = async (value) => {
+                        if (!value) return;
+
+                        try {
+                            const response = await api.fetchApi("/ollama/get_options", {
+                                method: "POST",
+                                body: JSON.stringify({ filename: value }),
+                            });
+
+                            if (response.ok) {
+                                const options = await response.json();
+                                promptsWidget.options.values = options;
+
+                                // Reset value to first option if current is invalid or always reset?
+                                // Let's reset to first option to avoid confusion
+                                if (options.length > 0) {
+                                    promptsWidget.value = options[0];
+                                } else {
+                                    promptsWidget.value = "";
+                                }
+
+                                // Force redraw
+                                this.setDirtyCanvas(true);
+                            }
+                        } catch (error) {
+                            console.error("[Ollama] Failed to fetch options:", error);
+                        }
+                    };
+                }
+
+                // Add output text display widget if not present
+                if (!this.widgets.find(w => w.name === "preview_text")) {
+                    const w = ComfyWidgets.STRING(this, "preview_text", ["STRING", { multiline: true }], app).widget;
+                    w.inputEl.readOnly = true;
+                    w.inputEl.style.opacity = 0.6;
+                }
+                this.setSize([this.size[0], Math.max(this.size[1], 350)]);
+            };
+
+            const onExecuted = nodeType.prototype.onExecuted;
+            nodeType.prototype.onExecuted = function (message) {
+                onExecuted?.apply(this, arguments);
+                if (message && message.text && message.text.length > 0) {
+                    const widget = this.widgets?.find((w) => w.name === "preview_text");
+                    if (widget) {
+                        widget.value = message.text[0];
+                    }
+                    this.onResize?.(this.size);
+                }
+            };
+        }
+    },
+});

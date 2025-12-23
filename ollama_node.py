@@ -2,6 +2,105 @@ import requests
 import json
 import os
 from server import PromptServer
+from aiohttp import web
+
+# Shared configuration
+ELEMENT_FILES = {
+    "subject": "subject.txt",
+    "composition": "composition.txt",
+    "action": "action.txt",
+    "location": "location.txt",
+    "style": "style.txt",
+    "editing_instructions": "editing_instructions.txt",
+    "camera_lighting": "camera_lighting.txt",
+    "specific_text": "specific_text.txt",
+    "factual_constraints": "factual_constraints.txt"
+}
+
+# Add API Route to fetch options dynamically
+@PromptServer.instance.routes.post("/ollama/get_options")
+async def get_options(request):
+    try:
+        data = await request.json()
+        filename = data.get("filename")
+        
+        if not filename:
+            return web.Response(status=400, text="Missing filename")
+            
+        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        file_path = os.path.join(elements_dir, filename)
+        
+        options = []
+        
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Special parsing for 'all.txt'
+            if filename == "all.txt":
+                separator = "="*60
+                chunks = content.split(separator)
+                for chunk in chunks:
+                    chunk = chunk.strip()
+                    if not chunk: continue
+                    
+                    # Logic: Create label from chunk
+                    lines = chunk.split('\n')
+                    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
+                    label_parts = []
+                    
+                    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
+                    if theme_line:
+                        val = theme_line.split(":", 1)[1].strip()
+                        words = val.split()[:3]
+                        label_parts.append(f"Thm: {' '.join(words)}")
+
+                    for line in lines:
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            k = k.strip()
+                            v = v.strip()
+                            if k in short_map:
+                                words = v.split()[:3]
+                                short_val = " ".join(words)
+                                if short_val:
+                                    label_parts.append(f"{short_map[k]}: {short_val}")
+                    
+                    if not label_parts:
+                        label = " ".join(chunk.split()[:5]) + "..."
+                    else:
+                        label = ", ".join(label_parts)
+                    
+                    options.append(label)
+                
+                # Reverse to show newest first
+                options.reverse()
+                
+            else:
+                # Standard line-based files
+                lines = content.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line:
+                        # Truncate if too long for UI
+                        if len(line) > 100:
+                            label = line[:100] + "..."
+                        else:
+                            label = line
+                        options.append(label)
+                
+                # Reverse standard files too? Usually yes for "saved recently"
+                options.reverse()
+        
+        if not options:
+            options = ["No saved prompts found"]
+            
+        return web.json_response(options)
+        
+    except Exception as e:
+        print(f"Error serving options: {e}")
+        return web.Response(status=500, text=str(e))
+
 
 class OllamaLLMNode:
     """
@@ -74,18 +173,8 @@ class OllamaNbpCharacter:
     Supports 9 structured elements with persistence and dynamic generation.
     """
     
-    # Map friendly names to file names
-    ELEMENT_FILES = {
-        "subject": "subject.txt",
-        "composition": "composition.txt",
-        "action": "action.txt",
-        "location": "location.txt",
-        "style": "style.txt",
-        "editing_instructions": "editing_instructions.txt",
-        "camera_lighting": "camera_lighting.txt",
-        "specific_text": "specific_text.txt",
-        "factual_constraints": "factual_constraints.txt"
-    }
+    # Use shared map
+    ELEMENT_FILES_MAP = ELEMENT_FILES
 
     # Map friendly names to UI input names
     ELEMENT_INPUTS = [
@@ -102,7 +191,7 @@ class OllamaNbpCharacter:
     def _save_option(self, element_key, content):
         """Appends a new option to the corresponding text file."""
         
-        file_path = os.path.join(self.elements_dir, self.ELEMENT_FILES[element_key])
+        file_path = os.path.join(self.elements_dir, self.ELEMENT_FILES_MAP[element_key])
         
         # Check for duplicates (simple check)
         existing = set()
@@ -134,17 +223,8 @@ class OllamaNbpCharacter:
             except:
                 pass # Already exists race condition
             
-        element_map = {
-            "subject": "subject.txt",
-            "composition": "composition.txt",
-            "action": "action.txt",
-            "location": "location.txt",
-            "style": "style.txt",
-            "editing_instructions": "editing_instructions.txt",
-            "camera_lighting": "camera_lighting.txt",
-            "specific_text": "specific_text.txt",
-            "factual_constraints": "factual_constraints.txt"
-        }
+        # Use shared map
+        element_map = ELEMENT_FILES
 
         # Ensure all files exist so we can read them
         for fname in element_map.values():
@@ -431,78 +511,62 @@ class OllamaNbpCharacter:
 
 class OllamaCharacterRestore:
     """
-    Restores full character prompts saved in 'all.txt'.
+    Restores full character prompts saved in 'all.txt' or individual element files.
     """
     
     @classmethod
     def INPUT_TYPES(s):
+        # file_list: [all.txt, subject.txt, ...]
+        file_list = ["all.txt"] + list(ELEMENT_FILES.values())
+        
+        # We start with the options from ALL (default)
+        # Note: ComfyUI will execute this ONCE on load. Dynamic updates handled by JS.
+        # We need to pre-populate 'saved_prompts' based on 'all.txt' defaults so it works on first load.
+        
         elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
         all_file_path = os.path.join(elements_dir, "all.txt")
         saved_prompts = []
         
-        separator = "="*60
-        
+        # --- LOGIC DUPLICATED FROM API FOR INITIAL LOAD ---
+        # (Alternatively we could call a shared function)
         if os.path.exists(all_file_path):
-            with open(all_file_path, "r", encoding="utf-8") as f:
+             with open(all_file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-                
-            # Split by separator
-            chunks = content.split(separator)
-            
-            for chunk in chunks:
-                chunk = chunk.strip()
-                if not chunk:
-                    continue
-                    
-                # Parse chunk to create a label
-                # We want "Sub: <3 words>, Com: <3 words>..."
-                lines = chunk.split('\n')
-                
-                # key mapping for label generation (short keys)
-                short_map = {
-                    "Subject": "Sub",
-                    "Composition": "Com",
-                    "Action": "Act",
-                    "Location": "Loc",
-                    "Style": "Sty"
-                }
-                
-                label_parts = []
-                
-                # Check for Theme first
-                theme_line = next((l for l in lines if l.startswith("Theme:")), None)
-                if theme_line:
-                    val = theme_line.split(":", 1)[1].strip()
-                    words = val.split()[:3]
-                    label_parts.append(f"Thm: {' '.join(words)}")
-
-                for line in lines:
-                    if ":" in line:
-                        k, v = line.split(":", 1)
-                        k = k.strip()
-                        v = v.strip()
-                        if k in short_map:
-                            words = v.split()[:3]
-                            short_val = " ".join(words)
-                            if short_val:
-                                label_parts.append(f"{short_map[k]}: {short_val}")
-                
-                if not label_parts:
-                    words = chunk.split()[:5]
-                    label = " ".join(words) + "..."
-                else:
-                    label = ", ".join(label_parts)
-                
-                saved_prompts.append(label)
-
+                separator = "="*60
+                chunks = content.split(separator)
+                for chunk in chunks:
+                    chunk = chunk.strip()
+                    if not chunk: continue
+                    lines = chunk.split('\n')
+                    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
+                    label_parts = []
+                    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
+                    if theme_line:
+                        val = theme_line.split(":", 1)[1].strip()
+                        words = val.split()[:3]
+                        label_parts.append(f"Thm: {' '.join(words)}")
+                    for line in lines:
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            k, v = k.strip(), v.strip()
+                            if k in short_map:
+                                words = v.split()[:3]
+                                short_val = " ".join(words)
+                                if short_val: label_parts.append(f"{short_map[k]}: {short_val}")
+                    if not label_parts:
+                        label = " ".join(chunk.split()[:5]) + "..."
+                    else:
+                        label = ", ".join(label_parts)
+                    saved_prompts.append(label)
+        
         if not saved_prompts:
             saved_prompts = ["No saved prompts found"]
-
-        # Reverse to show newest first
         saved_prompts.reverse()
+        # ----------------------------------------------------
 
         return {
             "required": {
+                "source_file": (file_list,),
                 "saved_prompts": (saved_prompts,),
             }
         }
@@ -513,70 +577,79 @@ class OllamaCharacterRestore:
     CATEGORY = "Ollama"
     OUTPUT_NODE = True
 
-    def restore(self, saved_prompts):
+    def restore(self, source_file, saved_prompts):
         """
-        Finds the full text corresponding to the selected label.
+        Finds the full text corresponding to the selected label from the selected file.
         """
         if saved_prompts == "No saved prompts found":
-            return {"ui": {"text": [""]}, "result": ("",)}
+             return {"ui": {"text": [""]}, "result": ("",)}
 
         elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        all_file_path = os.path.join(elements_dir, "all.txt")
-        separator = "="*60
+        file_path = os.path.join(elements_dir, source_file)
         
         full_text = ""
         
-        # Re-parse to find match
-        if os.path.exists(all_file_path):
-            with open(all_file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            
+        if not os.path.exists(file_path):
+             return {"ui": {"text": [f"Error: File {source_file} not found"]}, "result": ("",)}
+             
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # LOGIC BRANCH based on source_file
+        if source_file == "all.txt":
+            separator = "="*60
             chunks = content.split(separator)
             valid_chunks = [c.strip() for c in chunks if c.strip()]
             
             target_label = saved_prompts
             
             for chunk in valid_chunks:
-                # REPLICATE LABEL LOGIC
+                # REPLICATE ALL.TXT LABEL LOGIC
                 lines = chunk.split('\n')
-                short_map = {
-                    "Subject": "Sub",
-                    "Composition": "Com",
-                    "Action": "Act",
-                    "Location": "Loc",
-                    "Style": "Sty"
-                }
+                short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
                 label_parts = []
                 theme_line = next((l for l in lines if l.startswith("Theme:")), None)
                 if theme_line:
                     val = theme_line.split(":", 1)[1].strip()
                     words = val.split()[:3]
                     label_parts.append(f"Thm: {' '.join(words)}")
-
                 for line in lines:
                     if ":" in line:
-                        k, v = line.split(":", 1)
-                        k = k.strip()
-                        v = v.strip()
-                        if k in short_map:
+                         k, v = line.split(":", 1)
+                         k, v = k.strip(), v.strip()
+                         if k in short_map:
                             words = v.split()[:3]
                             short_val = " ".join(words)
-                            if short_val:
-                                label_parts.append(f"{short_map[k]}: {short_val}")
-                
+                            if short_val: label_parts.append(f"{short_map[k]}: {short_val}")
                 if not label_parts:
-                    words = chunk.split()[:5]
-                    label = " ".join(words) + "..."
+                    label = " ".join(chunk.split()[:5]) + "..."
                 else:
                     label = ", ".join(label_parts)
                 
                 if label == target_label:
-                    lines_to_keep = []
-                    for line in lines:
-                        if not line.startswith("Theme:"):
-                            lines_to_keep.append(line)
-                    
+                    lines_to_keep = [l for l in lines if not l.startswith("Theme:")]
                     full_text = "\n".join(lines_to_keep).strip()
                     break
-        
+        else:
+            # Simple line-based matching for other files
+            # The label IS the line (truncated). We find the full line that matches the label start?
+            # Or assume exact match if short enough? 
+            # In get_options API we truncated at 100 chars: `label = line[:100] + "..."`
+            
+            target_label = saved_prompts
+            lines = content.split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line: continue
+                
+                # Reconstruct label logic
+                if len(line) > 100:
+                    label = line[:100] + "..."
+                else:
+                    label = line
+                    
+                if label == target_label:
+                    full_text = line
+                    break
+
         return {"ui": {"text": [full_text]}, "result": (full_text,)}
