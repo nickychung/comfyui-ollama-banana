@@ -572,7 +572,7 @@ class OllamaCharacterRestore:
         }
 
     @classmethod
-    def VALIDATE_INPUTS(s, input_types):
+    def VALIDATE_INPUTS(s, **kwargs):
         return True
 
     RETURN_TYPES = ("STRING",)
