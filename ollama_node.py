@@ -101,6 +101,80 @@ async def get_options(request):
         print(f"Error serving options: {e}")
         return web.Response(status=500, text=str(e))
 
+@PromptServer.instance.routes.post("/ollama/get_content")
+async def get_content(request):
+    try:
+        data = await request.json()
+        filename = data.get("filename")
+        label_target = data.get("label")
+        
+        if not filename or not label_target:
+            return web.Response(status=400, text="Missing filename or label")
+            
+        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        file_path = os.path.join(elements_dir, filename)
+        
+        full_text = ""
+        
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if filename == "all.txt":
+                separator = "="*60
+                chunks = content.split(separator)
+                valid_chunks = [c.strip() for c in chunks if c.strip()]
+                
+                # Re-do logic to match label
+                for chunk in valid_chunks:
+                    lines = chunk.split('\n')
+                    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
+                    label_parts = []
+                    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
+                    if theme_line:
+                        val = theme_line.split(":", 1)[1].strip()
+                        words = val.split()[:3]
+                        label_parts.append(f"Thm: {' '.join(words)}")
+
+                    for line in lines:
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            k, v = k.strip(), v.strip()
+                            if k in short_map:
+                                words = v.split()[:3]
+                                short_val = " ".join(words)
+                                if short_val: label_parts.append(f"{short_map[k]}: {short_val}")
+                    
+                    if not label_parts:
+                        label = " ".join(chunk.split()[:5]) + "..."
+                    else:
+                        label = ", ".join(label_parts)
+                        
+                    if label == label_target:
+                        lines_to_keep = [l for l in lines if not l.startswith("Theme:")]
+                        full_text = "\n".join(lines_to_keep).strip()
+                        break
+            else:
+                # Line based
+                lines = content.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line: continue
+                    if len(line) > 100:
+                         lbl = line[:100] + "..."
+                    else:
+                         lbl = line
+                    
+                    if lbl == label_target:
+                        full_text = line
+                        break
+                        
+        return web.json_response({"content": full_text})
+        
+    except Exception as e:
+        print(f"Error serving content: {e}")
+        return web.Response(status=500, text=str(e))
+
 
 class OllamaLLMNode:
     """

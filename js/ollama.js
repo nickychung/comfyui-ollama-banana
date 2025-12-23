@@ -88,8 +88,41 @@ app.registerExtension({
                 const sourceWidget = this.widgets.find((w) => w.name === "source_file");
                 const promptsWidget = this.widgets.find((w) => w.name === "saved_prompts");
 
+                // Helper to update preview text
+                const updatePreview = async () => {
+                    const fileVal = sourceWidget?.value;
+                    const labelVal = promptsWidget?.value;
+
+                    if (!fileVal || !labelVal) return;
+
+                    // Find or create preview widget
+                    let previewWidget = this.widgets.find(w => w.name === "preview_text");
+                    if (!previewWidget) {
+                        const w = ComfyWidgets.STRING(this, "preview_text", ["STRING", { multiline: true }], app).widget;
+                        w.inputEl.readOnly = true;
+                        w.inputEl.style.opacity = 0.6;
+                        previewWidget = w;
+                    }
+
+                    try {
+                        const response = await api.fetchApi("/ollama/get_content", {
+                            method: "POST",
+                            body: JSON.stringify({ filename: fileVal, label: labelVal }),
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (previewWidget) {
+                                previewWidget.value = data.content;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("[Ollama] Failed to fetch content preview", e);
+                    }
+                };
+
                 if (sourceWidget && promptsWidget) {
-                    // Callback when source file changes
+                    // 1. Callback when source file changes
                     sourceWidget.callback = async (value) => {
                         if (!value) return;
 
@@ -103,13 +136,15 @@ app.registerExtension({
                                 const options = await response.json();
                                 promptsWidget.options.values = options;
 
-                                // Reset value to first option if current is invalid or always reset?
-                                // Let's reset to first option to avoid confusion
+                                // Reset to first option by default
                                 if (options.length > 0) {
                                     promptsWidget.value = options[0];
                                 } else {
                                     promptsWidget.value = "";
                                 }
+
+                                // Trigger preview update immediately
+                                await updatePreview();
 
                                 // Force redraw
                                 this.setDirtyCanvas(true);
@@ -118,15 +153,29 @@ app.registerExtension({
                             console.error("[Ollama] Failed to fetch options:", error);
                         }
                     };
+
+                    // 2. Callback when specific prompt is selected
+                    promptsWidget.callback = async (value) => {
+                        await updatePreview();
+                        this.setDirtyCanvas(true);
+                    };
                 }
 
-                // Add output text display widget if not present
+                // Initialize preview widget on load
                 if (!this.widgets.find(w => w.name === "preview_text")) {
                     const w = ComfyWidgets.STRING(this, "preview_text", ["STRING", { multiline: true }], app).widget;
                     w.inputEl.readOnly = true;
                     w.inputEl.style.opacity = 0.6;
                 }
-                this.setSize([this.size[0], Math.max(this.size[1], 350)]);
+
+                this.setSize([this.size[0], Math.max(this.size[1], 400)]);
+
+                // Trigger initial preview load after slight delay to ensure widgets ready
+                setTimeout(() => {
+                    if (sourceWidget && promptsWidget && sourceWidget.value && promptsWidget.value) {
+                        updatePreview();
+                    }
+                }, 100);
             };
 
             const onExecuted = nodeType.prototype.onExecuted;
