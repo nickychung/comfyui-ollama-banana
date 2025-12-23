@@ -1,7 +1,5 @@
 import requests
 import json
-import requests
-import json
 import os
 from server import PromptServer
 
@@ -201,7 +199,7 @@ class OllamaNbpCharacter:
         Generates a character prompt using the Ollama API with structured inputs.
         """
         import re 
-
+        
         api_url = f"{url}/api/generate"
         
         # 1. Parse Inputs & Identify Generation Needs
@@ -245,7 +243,7 @@ class OllamaNbpCharacter:
             # Construct system prompt (Text based, robust to chatty models)
             system_instruction = (
                 "You are an expert at creating detailed image generation prompts.\n"
-                "Your task is to generate structured prompt elements based on a user Theme or Randomly.\n"
+                "Your task is to generate structured prompt elements with your best imagination and description based on a user Theme or Randomly.\n"
                 "Do NOT output conversational fillers like 'Here is the prompt'. Just output the fields.\n\n"
                 "DEFINITIONS:\n"
                 "• Subject: Who or what is in the image? Be specific. (e.g., a stoic robot barista with glowing blue optics; a fluffy calico cat wearing a tiny wizard hat).\n"
@@ -310,18 +308,6 @@ class OllamaNbpCharacter:
                 
                 # Check for each key we requested
                 all_requested = to_generate_theme + to_generate_random
-                
-                for key in all_requested:
-                    display_name = display_names[key]
-                    # Regex explanation:
-                    # 1. match the Display Name literally
-                    # 2. match optional colon and whitespace
-                    # 3. capture everything until the next newline that looks like a new header OR end of string
-                    # Note: We assume headers are at start of lines.
-                    
-                    # Pattern: header followed by content, until next header or end
-                    # We iterate lines to be safer against regex complexity
-                    pass 
                 
                 # Simple Line Parser Strategy
                 # Split by newlines, identify lines that start with a known header
@@ -403,9 +389,6 @@ class OllamaNbpCharacter:
                 with open(all_file_path, "w", encoding="utf-8") as f:
                     pass
             
-            # Assemble the full text first (we do this below, but we need it now for saving)
-            # Let's ensure 'final_elements' is fully populated before this block?
-            # Actually, let's move this block AFTER step 4.
             pass
 
         # 4. Assemble Final Prompt
@@ -443,5 +426,157 @@ class OllamaNbpCharacter:
                 print(f"[OllamaNbpCharacter] Error saving to all.txt: {e}")
 
         print(f"Ollama NBP Character Final: {full_text}")
+        
+        return {"ui": {"text": [full_text]}, "result": (full_text,)}
+
+class OllamaCharacterRestore:
+    """
+    Restores full character prompts saved in 'all.txt'.
+    """
+    
+    @classmethod
+    def INPUT_TYPES(s):
+        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        all_file_path = os.path.join(elements_dir, "all.txt")
+        saved_prompts = []
+        
+        separator = "="*60
+        
+        if os.path.exists(all_file_path):
+            with open(all_file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                
+            # Split by separator
+            chunks = content.split(separator)
+            
+            for chunk in chunks:
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
+                    
+                # Parse chunk to create a label
+                # We want "Sub: <3 words>, Com: <3 words>..."
+                lines = chunk.split('\n')
+                
+                # key mapping for label generation (short keys)
+                short_map = {
+                    "Subject": "Sub",
+                    "Composition": "Com",
+                    "Action": "Act",
+                    "Location": "Loc",
+                    "Style": "Sty"
+                }
+                
+                label_parts = []
+                
+                # Check for Theme first
+                theme_line = next((l for l in lines if l.startswith("Theme:")), None)
+                if theme_line:
+                    val = theme_line.split(":", 1)[1].strip()
+                    words = val.split()[:3]
+                    label_parts.append(f"Thm: {' '.join(words)}")
+
+                for line in lines:
+                    if ":" in line:
+                        k, v = line.split(":", 1)
+                        k = k.strip()
+                        v = v.strip()
+                        if k in short_map:
+                            words = v.split()[:3]
+                            short_val = " ".join(words)
+                            if short_val:
+                                label_parts.append(f"{short_map[k]}: {short_val}")
+                
+                if not label_parts:
+                    words = chunk.split()[:5]
+                    label = " ".join(words) + "..."
+                else:
+                    label = ", ".join(label_parts)
+                
+                saved_prompts.append(label)
+
+        if not saved_prompts:
+            saved_prompts = ["No saved prompts found"]
+
+        # Reverse to show newest first
+        saved_prompts.reverse()
+
+        return {
+            "required": {
+                "saved_prompts": (saved_prompts,),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("Prompt",)
+    FUNCTION = "restore"
+    CATEGORY = "Ollama"
+    OUTPUT_NODE = True
+
+    def restore(self, saved_prompts):
+        """
+        Finds the full text corresponding to the selected label.
+        """
+        if saved_prompts == "No saved prompts found":
+            return {"ui": {"text": [""]}, "result": ("",)}
+
+        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        all_file_path = os.path.join(elements_dir, "all.txt")
+        separator = "="*60
+        
+        full_text = ""
+        
+        # Re-parse to find match
+        if os.path.exists(all_file_path):
+            with open(all_file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            chunks = content.split(separator)
+            valid_chunks = [c.strip() for c in chunks if c.strip()]
+            
+            target_label = saved_prompts
+            
+            for chunk in valid_chunks:
+                # REPLICATE LABEL LOGIC
+                lines = chunk.split('\n')
+                short_map = {
+                    "Subject": "Sub",
+                    "Composition": "Com",
+                    "Action": "Act",
+                    "Location": "Loc",
+                    "Style": "Sty"
+                }
+                label_parts = []
+                theme_line = next((l for l in lines if l.startswith("Theme:")), None)
+                if theme_line:
+                    val = theme_line.split(":", 1)[1].strip()
+                    words = val.split()[:3]
+                    label_parts.append(f"Thm: {' '.join(words)}")
+
+                for line in lines:
+                    if ":" in line:
+                        k, v = line.split(":", 1)
+                        k = k.strip()
+                        v = v.strip()
+                        if k in short_map:
+                            words = v.split()[:3]
+                            short_val = " ".join(words)
+                            if short_val:
+                                label_parts.append(f"{short_map[k]}: {short_val}")
+                
+                if not label_parts:
+                    words = chunk.split()[:5]
+                    label = " ".join(words) + "..."
+                else:
+                    label = ", ".join(label_parts)
+                
+                if label == target_label:
+                    lines_to_keep = []
+                    for line in lines:
+                        if not line.startswith("Theme:"):
+                            lines_to_keep.append(line)
+                    
+                    full_text = "\n".join(lines_to_keep).strip()
+                    break
         
         return {"ui": {"text": [full_text]}, "result": (full_text,)}
