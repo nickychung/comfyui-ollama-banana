@@ -571,6 +571,10 @@ class OllamaCharacterRestore:
             }
         }
 
+    @classmethod
+    def VALIDATE_INPUTS(s, input_types):
+        return True
+
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("Prompt",)
     FUNCTION = "restore"
