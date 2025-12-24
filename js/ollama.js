@@ -122,43 +122,50 @@ app.registerExtension({
                 };
 
                 if (sourceWidget && promptsWidget) {
-                    // 1. Callback when source file changes
-                    sourceWidget.callback = async (value) => {
-                        if (!value) return;
-
+                    // Helper to fetch options and sync widgets
+                    const syncOptions = async (filename, preserveValue = true) => {
+                        if (!filename) return;
                         try {
                             const response = await api.fetchApi("/ollama/get_options", {
                                 method: "POST",
-                                body: JSON.stringify({ filename: value }),
+                                body: JSON.stringify({ filename: filename }),
                             });
 
                             if (response.ok) {
                                 const options = await response.json();
                                 promptsWidget.options.values = options;
 
-                                // Reset to first option by default
-                                if (options.length > 0) {
-                                    promptsWidget.value = options[0];
-                                } else {
-                                    promptsWidget.value = "";
+                                let currentVal = promptsWidget.value;
+                                if (!preserveValue || !options.includes(currentVal)) {
+                                    if (options.length > 0) {
+                                        promptsWidget.value = options[0];
+                                    } else {
+                                        promptsWidget.value = "";
+                                    }
                                 }
 
-                                // Trigger preview update immediately
                                 await updatePreview();
-
-                                // Force redraw
                                 this.setDirtyCanvas(true);
                             }
                         } catch (error) {
-                            console.error("[Ollama] Failed to fetch options:", error);
+                            console.error("[Ollama] Failed to sync options:", error);
                         }
                     };
 
-                    // 2. Callback when specific prompt is selected
+                    sourceWidget.callback = async (value) => {
+                        await syncOptions(value, false);
+                    };
+
                     promptsWidget.callback = async (value) => {
                         await updatePreview();
                         this.setDirtyCanvas(true);
                     };
+
+                    setTimeout(() => {
+                        if (sourceWidget && sourceWidget.value) {
+                            syncOptions(sourceWidget.value, true);
+                        }
+                    }, 100);
                 }
 
                 // Initialize preview widget on load
@@ -169,13 +176,6 @@ app.registerExtension({
                 }
 
                 this.setSize([this.size[0], Math.max(this.size[1], 400)]);
-
-                // Trigger initial preview load after slight delay to ensure widgets ready
-                setTimeout(() => {
-                    if (sourceWidget && promptsWidget && sourceWidget.value && promptsWidget.value) {
-                        updatePreview();
-                    }
-                }, 100);
             };
 
             const onExecuted = nodeType.prototype.onExecuted;
