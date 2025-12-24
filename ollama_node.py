@@ -172,6 +172,31 @@ async def get_content(request):
         return web.Response(status=500, text=str(e))
 
 
+# Helper to fetch Ollama models
+def get_ollama_models(url="http://127.0.0.1:11434"):
+    try:
+        # Use short timeout to not block UI load
+        response = requests.get(f"{url}/api/tags", timeout=2)
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get("models", [])
+            # Sort by modified_at descending (newest first)
+            models.sort(key=lambda x: x.get("modified_at", ""), reverse=True)
+            
+            model_names = [m["name"] for m in models]
+            
+            # Default logic: prefer gpt-oss:20b
+            default_model = "gpt-oss:20b"
+            if default_model in model_names:
+                model_names.remove(default_model)
+                model_names.insert(0, default_model)
+                
+            return model_names
+    except Exception:
+        pass
+        
+    return ["gpt-oss:20b"]
+
 class OllamaLLMNode:
     """
     A custom node for ComfyUI that interfaces with a local Ollama instance to generate text.
@@ -182,10 +207,11 @@ class OllamaLLMNode:
     
     @classmethod
     def INPUT_TYPES(s):
+        models = get_ollama_models()
         return {
             "required": {
                 "prompt": ("STRING", {"multiline": True}),
-                "model": ("STRING", {"default": "gpt-oss:20b"}),
+                "model": (models,),
                 "url": ("STRING", {"default": "http://127.0.0.1:11434"}),
                 "keep_alive": ("INT", {"default": 0, "min": 0, "max": 240, "step": 1}),
             },
@@ -311,10 +337,13 @@ class OllamaNbpCharacter:
                     opts = [line.strip() for line in f if line.strip()]
             return opts
 
+        # Get models dynamically
+        models = get_ollama_models()
+
         inputs = {
             "required": {
                 "theme": ("STRING", {"multiline": True, "default": "Cyberpunk detective"}),
-                "model": ("STRING", {"default": "gpt-oss:20b"}),
+                "model": (models,),
                 "url": ("STRING", {"default": "http://127.0.0.1:11434"}),
                 "keep_alive": ("INT", {"default": 0, "min": 0, "max": 240, "step": 1}),
             },
