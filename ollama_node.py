@@ -17,6 +17,58 @@ ELEMENT_FILES = {
     "factual_constraints": "factual_constraints.txt"
 }
 
+# Helper functions for label generation
+def parse_single_line(line):
+    line = line.strip()
+    if not line: return ""
+    words = line.split()
+    if len(words) > 10:
+        return " ".join(words[:10]) + "..."
+    return line
+
+def parse_all_txt_chunk(chunk):
+    chunk = chunk.strip()
+    if not chunk: return ""
+    
+    lines = chunk.split('\n')
+    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
+    label_parts = []
+    
+    # Helper to pick 3 random words deterministically
+    def get_random_3(text):
+        words = text.split()
+        if not words: return ""
+        if len(words) <= 3: return " ".join(words)
+        # Deterministic seed based on the text content
+        import random
+        rng = random.Random(text)
+        chosen = rng.sample(words, 3)
+        return " ".join(chosen)
+
+    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
+    if theme_line:
+        if ":" in theme_line:
+            val = theme_line.split(":", 1)[1].strip()
+            short_val = get_random_3(val)
+            if short_val:
+                label_parts.append(f"Thm: {short_val}")
+
+    for line in lines:
+        if ":" in line:
+            parts = line.split(":", 1)
+            k = parts[0].strip()
+            v = parts[1].strip()
+            if k in short_map:
+                short_val = get_random_3(v)
+                if short_val:
+                    label_parts.append(f"{short_map[k]}: {short_val}")
+    
+    if not label_parts:
+        # Fallback if no structured parts found
+        return " ".join(chunk.split()[:5]) + "..."
+    
+    return ", ".join(label_parts)
+
 # Add API Route to fetch options dynamically
 @PromptServer.instance.routes.post("/ollama/get_options")
 async def get_options(request):
@@ -41,37 +93,9 @@ async def get_options(request):
                 separator = "="*60
                 chunks = content.split(separator)
                 for chunk in chunks:
-                    chunk = chunk.strip()
-                    if not chunk: continue
-                    
-                    # Logic: Create label from chunk
-                    lines = chunk.split('\n')
-                    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
-                    label_parts = []
-                    
-                    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
-                    if theme_line:
-                        val = theme_line.split(":", 1)[1].strip()
-                        words = val.split()[:3]
-                        label_parts.append(f"Thm: {' '.join(words)}")
-
-                    for line in lines:
-                        if ":" in line:
-                            k, v = line.split(":", 1)
-                            k = k.strip()
-                            v = v.strip()
-                            if k in short_map:
-                                words = v.split()[:3]
-                                short_val = " ".join(words)
-                                if short_val:
-                                    label_parts.append(f"{short_map[k]}: {short_val}")
-                    
-                    if not label_parts:
-                        label = " ".join(chunk.split()[:5]) + "..."
-                    else:
-                        label = ", ".join(label_parts)
-                    
-                    options.append(label)
+                    label = parse_all_txt_chunk(chunk)
+                    if label:
+                        options.append(label)
                 
                 # Reverse to show newest first
                 options.reverse()
@@ -80,13 +104,8 @@ async def get_options(request):
                 # Standard line-based files
                 lines = content.split('\n')
                 for line in lines:
-                    line = line.strip()
-                    if line:
-                        # Truncate if too long for UI
-                        if len(line) > 100:
-                            label = line[:100] + "..."
-                        else:
-                            label = line
+                    label = parse_single_line(line)
+                    if label:
                         options.append(label)
                 
                 # Reverse standard files too? Usually yes for "saved recently"
@@ -127,30 +146,10 @@ async def get_content(request):
                 
                 # Re-do logic to match label
                 for chunk in valid_chunks:
-                    lines = chunk.split('\n')
-                    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
-                    label_parts = []
-                    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
-                    if theme_line:
-                        val = theme_line.split(":", 1)[1].strip()
-                        words = val.split()[:3]
-                        label_parts.append(f"Thm: {' '.join(words)}")
-
-                    for line in lines:
-                        if ":" in line:
-                            k, v = line.split(":", 1)
-                            k, v = k.strip(), v.strip()
-                            if k in short_map:
-                                words = v.split()[:3]
-                                short_val = " ".join(words)
-                                if short_val: label_parts.append(f"{short_map[k]}: {short_val}")
-                    
-                    if not label_parts:
-                        label = " ".join(chunk.split()[:5]) + "..."
-                    else:
-                        label = ", ".join(label_parts)
+                    label = parse_all_txt_chunk(chunk)
                         
                     if label == label_target:
+                        lines = chunk.split('\n')
                         lines_to_keep = [l for l in lines if not l.startswith("Theme:")]
                         full_text = "\n".join(lines_to_keep).strip()
                         break
@@ -160,12 +159,9 @@ async def get_content(request):
                 for line in lines:
                     line = line.strip()
                     if not line: continue
-                    if len(line) > 100:
-                         lbl = line[:100] + "..."
-                    else:
-                         lbl = line
+                    label = parse_single_line(line)
                     
-                    if lbl == label_target:
+                    if label == label_target:
                         full_text = line
                         break
                         
@@ -609,29 +605,9 @@ class OllamaCharacterRestore:
                 separator = "="*60
                 chunks = content.split(separator)
                 for chunk in chunks:
-                    chunk = chunk.strip()
-                    if not chunk: continue
-                    lines = chunk.split('\n')
-                    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
-                    label_parts = []
-                    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
-                    if theme_line:
-                        val = theme_line.split(":", 1)[1].strip()
-                        words = val.split()[:3]
-                        label_parts.append(f"Thm: {' '.join(words)}")
-                    for line in lines:
-                        if ":" in line:
-                            k, v = line.split(":", 1)
-                            k, v = k.strip(), v.strip()
-                            if k in short_map:
-                                words = v.split()[:3]
-                                short_val = " ".join(words)
-                                if short_val: label_parts.append(f"{short_map[k]}: {short_val}")
-                    if not label_parts:
-                        label = " ".join(chunk.split()[:5]) + "..."
-                    else:
-                        label = ", ".join(label_parts)
-                    saved_prompts.append(label)
+                    label = parse_all_txt_chunk(chunk)
+                    if label:
+                        saved_prompts.append(label)
         
         if not saved_prompts:
             saved_prompts = ["No saved prompts found"]
@@ -682,49 +658,22 @@ class OllamaCharacterRestore:
             target_label = saved_prompts
             
             for chunk in valid_chunks:
-                # REPLICATE ALL.TXT LABEL LOGIC
-                lines = chunk.split('\n')
-                short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
-                label_parts = []
-                theme_line = next((l for l in lines if l.startswith("Theme:")), None)
-                if theme_line:
-                    val = theme_line.split(":", 1)[1].strip()
-                    words = val.split()[:3]
-                    label_parts.append(f"Thm: {' '.join(words)}")
-                for line in lines:
-                    if ":" in line:
-                         k, v = line.split(":", 1)
-                         k, v = k.strip(), v.strip()
-                         if k in short_map:
-                            words = v.split()[:3]
-                            short_val = " ".join(words)
-                            if short_val: label_parts.append(f"{short_map[k]}: {short_val}")
-                if not label_parts:
-                    label = " ".join(chunk.split()[:5]) + "..."
-                else:
-                    label = ", ".join(label_parts)
+                label = parse_all_txt_chunk(chunk)
                 
                 if label == target_label:
+                    lines = chunk.split('\n')
                     lines_to_keep = [l for l in lines if not l.startswith("Theme:")]
                     full_text = "\n".join(lines_to_keep).strip()
                     break
         else:
             # Simple line-based matching for other files
-            # The label IS the line (truncated). We find the full line that matches the label start?
-            # Or assume exact match if short enough? 
-            # In get_options API we truncated at 100 chars: `label = line[:100] + "..."`
-            
             target_label = saved_prompts
             lines = content.split('\n')
             for line in lines:
                 line = line.strip()
                 if not line: continue
                 
-                # Reconstruct label logic
-                if len(line) > 100:
-                    label = line[:100] + "..."
-                else:
-                    label = line
+                label = parse_single_line(line)
                     
                 if label == target_label:
                     full_text = line
