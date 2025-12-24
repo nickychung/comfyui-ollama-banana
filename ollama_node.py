@@ -423,6 +423,7 @@ class OllamaNbpCharacter:
             system_instruction = (
                 "You are an expert at creating detailed image generation prompts.\n"
                 "Your task is to generate structured prompt elements with your best imagination and description based on a user Theme or Randomly.\n"
+                "Describe the character’s clothing in rich and precise detail, either by following the provided Theme or by generating it randomly. The level of detail should adapt to the composition: for close-up or portrait shots, focus only on upper-body attire and omit any lower-body descriptions; for medium or full-body compositions, ensure that lower-body clothing and footwear are clearly and thoroughly described.\n"
                 "Do NOT output conversational fillers like 'Here is the prompt'. Just output the fields.\n\n"
                 "DEFINITIONS:\n"
                 "• Subject: Who or what is in the image? Be specific. (e.g., a stoic robot barista with glowing blue optics; a fluffy calico cat wearing a tiny wizard hat).\n"
@@ -436,8 +437,8 @@ class OllamaNbpCharacter:
                 "• Factual constraints (for diagrams): Specify the need for accuracy and ensure your inputs themselves are factual (e.g., \"A scientifically accurate cross-section diagram,\" \"Ensure historical accuracy for the Victorian era.\").\n"
                 "\n"
                 "Example:\n"
-                "Subject: A young woman with pale skin and a very slender, skinny build with a small waist. She has grey hair with distinct pink and blue highlights. She is wearing a black satin corset with mesh panels and subtle leather strapping details, accessorized with a simple black velvet choker.\n"
                 "Composition: A photorealistic close-up portrait, framed from the chest to the top of the head.\n"
+                "Subject: A young woman with pale skin and a very slender, skinny build with a small waist. She has grey hair with distinct pink and blue highlights. She is wearing a black satin corset with mesh panels and subtle leather strapping details, accessorized with a simple black velvet choker.\n"
                 "Action: She is seated at a cluttered antique vanity table. Her body is turned away, but she turns her head over her shoulder to look directly into the camera with a sultry, confident gaze. One hand rests on the aged wooden table near a perfume bottle.\n"
                 "Location: A dimly lit, bohemian bedroom in Paris. The background consists of a warm bokeh of tarnished silver hand-mirrors, vintage cosmetics, and heavy, dark tapestries.\n"
                 "Style: Photorealistic, cinematic, and ultra-high resolution (8k). The aesthetic should mimic the look of Kodak Portra 400 film.\n"
