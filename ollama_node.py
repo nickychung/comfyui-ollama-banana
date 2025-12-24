@@ -422,7 +422,7 @@ class OllamaNbpCharacter:
             # Construct system prompt (Text based, robust to chatty models)
             system_instruction = (
                 "You are an expert at creating detailed image generation prompts.\n"
-                "Your task is to generate structured prompt elements with your best imagination and description based on a user Theme or Randomly.\n"
+                "Your task is to generate structured prompt elements with your best imagination based on a user Theme or Randomly.\n"
                 "Describe the character’s clothing in rich and precise detail, either by following the provided Theme or by generating it randomly. The level of detail should adapt to the composition: for close-up or portrait shots, focus only on upper-body attire and omit any lower-body descriptions; for medium or full-body compositions, ensure that lower-body clothing and footwear are clearly and thoroughly described.\n"
                 "Do NOT output conversational fillers like 'Here is the prompt'. Just output the fields.\n\n"
                 "DEFINITIONS:\n"
