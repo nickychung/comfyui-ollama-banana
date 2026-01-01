@@ -181,7 +181,7 @@ async def get_content(request):
 
 
 # Helper to fetch Ollama models
-def get_ollama_models(url="http://127.0.0.1:11434", vision_only=False):
+def get_ollama_models(url="http://127.0.0.1:11434"):
     try:
         # Use short timeout to not block UI load
         response = requests.get(f"{url}/api/tags", timeout=2)
@@ -189,37 +189,16 @@ def get_ollama_models(url="http://127.0.0.1:11434", vision_only=False):
             data = response.json()
             models = data.get("models", [])
             
-            # Filter for vision models if requested
-            if vision_only:
-                vision_models = []
-                for m in models:
-                    details = m.get("details", {})
-                    families = details.get("families", [])
-                    # Check for 'clip' or 'vision' in families, or known vision models in name
-                    if families and ("clip" in families or "vision" in families or "llava" in m["name"] or "moondream" in m["name"] or "minicpm" in m["name"]):
-                        vision_models.append(m)
-                models = vision_models
-
             # Sort by modified_at descending (newest first)
             models.sort(key=lambda x: x.get("modified_at", ""), reverse=True)
             
             model_names = [m["name"] for m in models]
             
-            # Default logic: prefer gpt-oss:20b if not vision only
-            if not vision_only:
-                default_model = "gpt-oss:20b"
-                if default_model in model_names:
-                    model_names.remove(default_model)
-                    model_names.insert(0, default_model)
-            
-            if not model_names and vision_only:
-                return ["No vision models found"]
-                
             return model_names
     except Exception:
         pass
         
-    return ["gpt-oss:20b"] if not vision_only else ["No vision models found"]
+    return ["gpt-oss:20b"]
 
 class OllamaLLMNode:
     """
@@ -747,8 +726,8 @@ class OllamaImageSaver:
 
     @classmethod
     def INPUT_TYPES(s):
-        # dynamic model fetching with vision filter
-        vision_models = get_ollama_models(vision_only=True)
+        # Show all models to avoid filtering issues
+        models = get_ollama_models()
         
         # Get user's download directory as default
         try:
@@ -760,8 +739,7 @@ class OllamaImageSaver:
             "required": {
                 "images": ("IMAGE",),
                 "folder_path": ("STRING", {"default": default_path}),
-                "model": (vision_models,),
-                "prompt": ("STRING", {"multiline": True, "default": "Analyze the image and define 10 key elements for file name. Output ONLY the keywords separated by underscores. Do not output sentences."}),
+                "model": (models,),
                 "url": ("STRING", {"default": "http://127.0.0.1:11434"}),
             },
             "optional": {
@@ -775,7 +753,9 @@ class OllamaImageSaver:
     OUTPUT_NODE = True
     CATEGORY = "Ollama"
 
-    def save_images(self, images, folder_path, model, prompt, url, filename_prefix="Ollama", add_metadata=True):
+    def save_images(self, images, folder_path, model, url, filename_prefix="Ollama", add_metadata=True):
+        
+        prompt = "Analyze the image and define 10 key elements for file name. Output ONLY the keywords separated by underscores. Do not output sentences."
         
         results = []
         
@@ -800,7 +780,7 @@ class OllamaImageSaver:
             
             # 3. Call Ollama Vision
             keywords = "image"
-            if model != "No vision models found":
+            if model:
                 try:
                     api_url = f"{url}/api/generate"
                     payload = {
