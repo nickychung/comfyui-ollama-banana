@@ -11,6 +11,8 @@ import base64
 import time
 from pathlib import Path
 from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog
 
 # Shared configuration
 ELEMENT_FILES = {
@@ -177,6 +179,34 @@ async def get_content(request):
         
     except Exception as e:
         print(f"Error serving content: {e}")
+        return web.Response(status=500, text=str(e))
+
+@PromptServer.instance.routes.post("/ollama/browse")
+async def browse_folder(request):
+    try:
+        # 1. Create hidden root window
+        root = tk.Tk()
+        root.withdraw() # Hide the main window
+        root.attributes('-topmost', True) # Output on top
+        
+        # 2. Open Directory Picker
+        # Note: This blocks the server thread until closed, but since it's local user interaction, it's acceptable.
+        folder_path = filedialog.askdirectory()
+        
+        root.destroy()
+        
+        if folder_path:
+            # Normalize path separators
+            folder_path = os.path.normpath(folder_path)
+            # Ensure forward slashes for cross-platform compatibility (JS likes /)
+            # Although on Windows backslash is standard, Python/Nodes often handle both.
+            # But specific to this user, they are on Windows.
+            return web.json_response({"path": folder_path})
+        else:
+            return web.json_response({"path": ""}) # Cancelled
+            
+    except Exception as e:
+        print(f"Error opening file dialog: {e}")
         return web.Response(status=500, text=str(e))
 
 
