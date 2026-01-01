@@ -757,6 +757,43 @@ class OllamaImageSaver:
         
         prompt = "Analyze the image and define 10 key elements for file name. Output ONLY the keywords separated by underscores. Do not output sentences."
         
+        # Robust Argument Recovery for Stale Workflows
+        # Scan 'url', 'filename_prefix', and 'kwargs' for the real URL.
+        # The prompt is likely in 'url' due to positional shift.
+        
+        candidates = [url, filename_prefix] + list(kwargs.values())
+        real_url = "http://127.0.0.1:11434" # Fallback default
+        found_url = False
+        
+        # 1. Identify valid URL
+        for c in candidates:
+            if isinstance(c, str) and (c.startswith("http://") or c.startswith("https://")):
+                real_url = c
+                found_url = True
+                break
+        
+        # 2. Logic to detect if we need to swap
+        # If 'url' is NOT the real URL (e.g. it's the prompt text), we override it.
+        # We only override if we found a better candidate OR if the current 'url' is clearly invalid (has spaces, long text).
+        
+        is_url_invalid = isinstance(url, str) and (" " in url or len(url) > 100 or not url.startswith("http"))
+        
+        if found_url:
+            if is_url_invalid or url != real_url:
+                print(f"OllamaImageSaver: Correcting argument mismatch. {url[:20]}... -> {real_url}")
+                url = real_url
+                
+                # If we used filename_prefix as the source, reset filename_prefix to default
+                if filename_prefix == real_url:
+                    filename_prefix = "Ollama"
+        else:
+            # If no URL found at all, but current 'url' is bad, force default
+            if is_url_invalid:
+                 print(f"OllamaImageSaver: Invalid URL detected ('{url[:20]}...'). Reverting to default.")
+                 url = "http://127.0.0.1:11434"
+                 if filename_prefix == url: 
+                    filename_prefix = "Ollama"
+
         results = []
         
         # Ensure output directory exists
