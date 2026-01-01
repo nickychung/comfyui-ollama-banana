@@ -11,8 +11,13 @@ import base64
 import time
 from pathlib import Path
 from datetime import datetime
-import tkinter as tk
-from tkinter import filedialog
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    TKINTER_AVAILABLE = True
+except ImportError:
+    TKINTER_AVAILABLE = False
+    print("OllamaImageSaver: Tkinter not found. Folder browsing will be disabled.")
 
 # Shared configuration
 ELEMENT_FILES = {
@@ -183,6 +188,10 @@ async def get_content(request):
 
 @PromptServer.instance.routes.post("/ollama/browse")
 async def browse_folder(request):
+    if not TKINTER_AVAILABLE:
+        print("OllamaImageSaver: Browse request ignored (Tkinter missing)")
+        return web.json_response({"path": ""})
+
     try:
         # 1. Create hidden root window
         root = tk.Tk()
