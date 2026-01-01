@@ -753,7 +753,7 @@ class OllamaImageSaver:
     OUTPUT_NODE = True
     CATEGORY = "Ollama"
 
-    def save_images(self, images, folder_path, model, url, filename_prefix="Ollama", add_metadata=True):
+    def save_images(self, images, folder_path, model, url, filename_prefix="Ollama", add_metadata=True, **kwargs):
         
         prompt = "Analyze the image and define 10 key elements for file name. Output ONLY the keywords separated by underscores. Do not output sentences."
         
