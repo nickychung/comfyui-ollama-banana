@@ -881,7 +881,7 @@ class OllamaImageSaver:
                     metadata.add_text(x, json.dumps(extra_pnginfo[x]))
 
             try:
-                img.save(full_path, format="PNG", pnginfo=metadata, optimize=False)
+                img.save(full_path, format="PNG", pnginfo=metadata, optimize=False, compress_level=4)
                 print(f"Saved image to: {full_path}")
             except Exception as e:
                 print(f"Error saving image: {e}")
