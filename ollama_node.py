@@ -8,9 +8,14 @@ import numpy as np
 from PIL import Image
 import io
 import base64
+import json
 import time
 from pathlib import Path
 from datetime import datetime
+try:
+    from PIL import PngImagePlugin
+except ImportError:
+    pass
 
 # Shared configuration
 ELEMENT_FILES = {
@@ -752,9 +757,9 @@ class OllamaImageSaver:
     OUTPUT_NODE = True
     CATEGORY = "Ollama"
 
-    def save_images(self, images, folder_path, model, url, filename_prefix="Ollama", add_metadata=True, **kwargs):
+    def save_images(self, images, folder_path, model, url, filename_prefix="Ollama", add_metadata=True, prompt=None, extra_pnginfo=None, **kwargs):
         
-        prompt = "Analyze the image and generate a filename part using EXACTLY this format: sbj-[subject_two_words]_loc-[location_two_words]_thm-[theme_two_words]_act-[action_two_words]. Replace brackets with 2 descriptive words separated by underscore. Use lowercase only. Example: sbj-young_girl_loc-floral_garden_thm-green_nature_act-sitting_ground. Do not output anything else."
+        ollama_prompt = "Analyze the image and generate a filename part using EXACTLY this format: sbj-[subject_two_words]_loc-[location_two_words]_thm-[theme_two_words]_act-[action_two_words]. Replace brackets with 2 descriptive words separated by underscore. Use lowercase only. Example: sbj-young_girl_loc-floral_garden_thm-green_nature_act-sitting_ground. Do not output anything else."
         
         # Robust Argument Recovery for Stale Workflows
         # Scan 'url', 'filename_prefix', and 'kwargs' for the real URL.
@@ -821,7 +826,7 @@ class OllamaImageSaver:
                     api_url = f"{url}/api/generate"
                     payload = {
                         "model": model,
-                        "prompt": prompt,
+                        "prompt": ollama_prompt,
                         "images": [img_base64],
                         "stream": False
                     }
@@ -865,15 +870,23 @@ class OllamaImageSaver:
                 
             filename = "_".join(filename_parts) + ".png"
             
-            # 6. Save Image (Lossless PNG)
+            # 6. Save Image (Lossless PNG) with Metadata
             full_path = os.path.join(folder_path, filename)
+            
+            metadata = PngImagePlugin.PngInfo()
+            if prompt is not None:
+                metadata.add_text("prompt", json.dumps(prompt))
+            if extra_pnginfo is not None:
+                for x in extra_pnginfo:
+                    metadata.add_text(x, json.dumps(extra_pnginfo[x]))
+
             try:
-                img.save(full_path, format="PNG", optimize=False)
+                img.save(full_path, format="PNG", pnginfo=metadata, optimize=False)
                 print(f"Saved image to: {full_path}")
             except Exception as e:
                 print(f"Error saving image: {e}")
 
-        return {}
+        return {"ui": {"images": results}}
 
 NODE_CLASS_MAPPINGS = {
     "OllamaLLMNode": OllamaLLMNode,
