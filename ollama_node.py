@@ -219,6 +219,10 @@ async def browse_folder(request):
         return web.Response(status=500, text=str(e))
 
 
+@PromptServer.instance.routes.get("/ollama/check_tkinter")
+async def check_tkinter(request):
+    return web.json_response({"available": TKINTER_AVAILABLE})
+
 # Helper to fetch Ollama models
 def get_ollama_models(url="http://127.0.0.1:11434"):
     try:
