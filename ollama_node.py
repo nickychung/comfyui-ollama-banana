@@ -754,7 +754,7 @@ class OllamaImageSaver:
 
     def save_images(self, images, folder_path, model, url, filename_prefix="Ollama", add_metadata=True, **kwargs):
         
-        prompt = "Analyze the image and define 10 key elements for file name. Output ONLY the keywords separated by underscores. Do not output sentences."
+        prompt = "Analyze the image and generate a filename part using EXACTLY this format: sbj-[subject_two_words]_loc-[location_two_words]_thm-[theme_two_words]_act-[action_two_words]. Replace brackets with 2 descriptive words separated by underscore. Use lowercase only. Example: sbj-young_girl_loc-floral_garden_thm-green_nature_act-sitting_ground. Do not output anything else."
         
         # Robust Argument Recovery for Stale Workflows
         # Scan 'url', 'filename_prefix', and 'kwargs' for the real URL.
@@ -833,15 +833,17 @@ class OllamaImageSaver:
                     raw_text = response_data.get("response", "")
                     
                     # 4. Clean up keywords
-                    # Replace non-alphanumeric with underscore, keep simple
-                    cleaned = "".join([c if c.isalnum() else "_" for c in raw_text])
+                    # Apply simple cleaning but allow hyphens for the tag format (sbj-..., loc-...)
+                    # We allow alphanumeric, underscores, and hyphens.
+                    cleaned = "".join([c if c.isalnum() or c == "-" else "_" for c in raw_text])
                     # Remove duplicate underscores
                     while "__" in cleaned:
                         cleaned = cleaned.replace("__", "_")
+                        
                     keywords = cleaned.strip("_")
                     # Limit length
-                    if len(keywords) > 100:
-                        keywords = keywords[:100]
+                    if len(keywords) > 200:
+                        keywords = keywords[:200]
                         
                 except Exception as e:
                     print(f"Ollama Vision Error: {e}")
