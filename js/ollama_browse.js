@@ -24,7 +24,7 @@ app.registerExtension({
                         .catch(err => {
                             console.error("Error browsing folder:", err);
                         });
-                });
+                }, { serialize: false }); // Disable serialization to prevent shifting
 
                 // 1. Move Button to be before 'folder_path' (Top of folder_path)
                 const folderIdx = this.widgets.findIndex(w => w.name === "folder_path");
@@ -44,12 +44,9 @@ app.registerExtension({
                     .then(data => {
                         if (!data.available) {
                             browseBtn.name = "Browse (Unavailable - Missing Tkinter)";
-                            // ComfyUI buttons are functional via callback.
-                            // We replace the callback to show alert.
                             browseBtn.callback = () => {
                                 alert("Folder browsing is disabled because Tkinter is missing on the server (System Python Required).");
                             };
-                            // No standard visual disabled state, but changing name indicates it.
                         }
                     })
                     .catch(() => { });
