@@ -350,28 +350,63 @@ class OllamaNbpCharacter:
         # 4. Save to CSV Logic
         if kwargs.get("save_to_csv", False):
             try:
-                # Generate Summary Tag
-                # tag format: sbj-{sub}_loc-{loc}_thm-{thm}_act-{act}
+                # Generate Summary Tag using AI
+                # Schema: thm-[2words]_sbj-[2words]_loc-[2words]_act-[2words]
                 
-                def get_tag_words(text):
-                    if not text: return "na"
-                    # simplistic: take first 2 alphanumeric words
-                    words = [w for w in re.findall(r'\w+', text.lower()) if len(w) > 2] # filter tiny words
-                    return "_".join(words[:2]) if words else "na"
+                print("[OllamaNbpCharacter] Generating AI Summary Tag...")
+                
+                summary_prompt = (
+                    "Analyze the following character description and extract 4 key elements: Theme, Subject, Location, and Action.\n"
+                    "For each element, summarize it into exactly TWO words.\n"
+                    "Format the output string EXACTLY like this: thm-word_word_sbj-word_word_loc-word_word_act-word_word\n"
+                    "Use lowercase only. Use underscores between words in a pair. Use hyphens between the tag name and the words.\n"
+                    "Do NOT output anything else. No intro, no explanation.\n\n"
+                    f"Description:\n{full_text}\n"
+                    f"Context Theme: {theme}\n"
+                )
+                
+                summary_payload = {
+                    "model": model,
+                    "prompt": summary_prompt,
+                    "stream": False,
+                    "keep_alive": f"{keep_alive}m",
+                    "options": {"temperature": 0.1} # Low temp for strict formatting
+                }
+                
+                summary_tag = "thm-na_sbj-na_loc-na_act-na" # Default fallback
+                
+                try:
+                    s_response = requests.post(api_url, json=summary_payload)
+                    s_response.raise_for_status()
+                    s_data = s_response.json()
+                    s_content = s_data.get("response", "").strip().lower()
+                    
+                    # Basic validation: check if it looks roughly right
+                    if "thm-" in s_content and "sbj-" in s_content:
+                        # Clean up any extra whitespace or newlines
+                        s_content = "".join(s_content.split())
+                        summary_tag = s_content
+                        print(f"[OllamaNbpCharacter] AI Summary: {summary_tag}")
+                    else:
+                        print(f"[OllamaNbpCharacter] AI Summary failed validation, text was: {s_content}")
+                        # Fallback to regex if AI fails hard?
+                        # For now, let's trust the AI or leave the error visible so user knows.
+                        summary_tag = s_content if s_content else "error_generating_summary"
+                        
+                except Exception as e:
+                    print(f"[OllamaNbpCharacter] AI Summary API Error: {e}")
+                    # Fallback to simple construction if API fails
+                    def get_tag_words(text):
+                        if not text: return "na"
+                        words = [w for w in re.findall(r'\w+', text.lower()) if len(w) > 2]
+                        return "_".join(words[:2]) if words else "na"
 
-                sbj_tag = get_tag_words(final_elements.get("subject", ""))
-                loc_tag = get_tag_words(final_elements.get("location", ""))
-                
-                # Theme is explicit output or the input theme? 
-                # Request asked for "thm_ follows the description of theme". 
-                # We interpret this as the user's input theme generally, unless 'theme' was a generated field?
-                # Actually 'theme' is an input parameter 'theme'.
-                thm_tag = get_tag_words(theme)
-                
-                act_tag = get_tag_words(final_elements.get("action", ""))
-                
-                summary_tag = f"sbj-{sbj_tag}_loc-{loc_tag}_thm-{thm_tag}_act-{act_tag}"
-                
+                    sbj_t = get_tag_words(final_elements.get("subject", ""))
+                    loc_t = get_tag_words(final_elements.get("location", ""))
+                    thm_t = get_tag_words(theme)
+                    act_t = get_tag_words(final_elements.get("action", ""))
+                    summary_tag = f"thm-{thm_t}_sbj-{sbj_t}_loc-{loc_t}_act-{act_t}"
+
                 csv_file_path = os.path.join(self.elements_dir, "prompts.csv")
                 file_exists = os.path.exists(csv_file_path)
                 
