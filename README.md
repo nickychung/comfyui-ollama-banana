@@ -58,4 +58,5 @@ A simple, general-purpose node for chatting with Ollama.
 
 ## License
 
-MIT
+This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**. 
+You are free to use, modify, and distribute this software for personal, non-commercial purposes. Commercial use is strictly prohibited without prior permission.
