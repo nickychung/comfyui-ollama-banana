@@ -18,172 +18,8 @@ try:
 except ImportError:
     pass
 
-# Shared configuration
-ELEMENT_FILES = {
-    "subject": "subject.txt",
-    "composition": "composition.txt",
-    "action": "action.txt",
-    "location": "location.txt",
-    "style": "style.txt",
-    "editing_instructions": "editing_instructions.txt",
-    "camera_lighting": "camera_lighting.txt",
-    "specific_text": "specific_text.txt",
-    "factual_constraints": "factual_constraints.txt"
-}
-
-# Helper functions for label generation
-def parse_single_line(line):
-    line = line.strip()
-    if not line: return ""
-    words = line.split()
-    if len(words) > 10:
-        return " ".join(words[:10]) + "..."
-    return line
-
-def parse_all_txt_chunk(chunk):
-    chunk = chunk.strip()
-    if not chunk: return ""
-    
-    lines = chunk.split('\n')
-    short_map = {"Subject": "Sub", "Composition": "Com", "Action": "Act", "Location": "Loc", "Style": "Sty"}
-    label_parts = []
-    
-    # Helper to pick 3 random words deterministically
-    def get_random_3(text):
-        words = text.split()
-        if not words: return ""
-        if len(words) <= 3: return " ".join(words)
-        # Deterministic seed based on the text content
-        import random
-        rng = random.Random(text)
-        chosen = rng.sample(words, 3)
-        return " ".join(chosen)
-
-    theme_line = next((l for l in lines if l.startswith("Theme:")), None)
-    if theme_line:
-        if ":" in theme_line:
-            val = theme_line.split(":", 1)[1].strip()
-            short_val = get_random_3(val)
-            if short_val:
-                label_parts.append(f"Thm: {short_val}")
-
-    for line in lines:
-        if ":" in line:
-            parts = line.split(":", 1)
-            k = parts[0].strip()
-            v = parts[1].strip()
-            if k in short_map:
-                short_val = get_random_3(v)
-                if short_val:
-                    label_parts.append(f"{short_map[k]}: {short_val}")
-    
-    if not label_parts:
-        # Fallback if no structured parts found
-        return " ".join(chunk.split()[:5]) + "..."
-    
-    return ", ".join(label_parts)
-
-# Add API Route to fetch options dynamically
-@PromptServer.instance.routes.post("/ollama/get_options")
-async def get_options(request):
-    try:
-        data = await request.json()
-        filename = data.get("filename")
-        
-        if not filename:
-            return web.Response(status=400, text="Missing filename")
-            
-        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        file_path = os.path.join(elements_dir, filename)
-        
-        options = []
-        
-        if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            # Special parsing for 'all.txt'
-            if filename == "all.txt":
-                separator = "="*60
-                chunks = content.split(separator)
-                for chunk in chunks:
-                    label = parse_all_txt_chunk(chunk)
-                    if label:
-                        options.append(label)
-                
-                # Reverse to show newest first
-                options.reverse()
-                
-            else:
-                # Standard line-based files
-                lines = content.split('\n')
-                for line in lines:
-                    label = parse_single_line(line)
-                    if label:
-                        options.append(label)
-                
-                # Reverse standard files too? Usually yes for "saved recently"
-                options.reverse()
-        
-        if not options:
-            options = ["No saved prompts found"]
-            
-        return web.json_response(options)
-        
-    except Exception as e:
-        print(f"Error serving options: {e}")
-        return web.Response(status=500, text=str(e))
-
-@PromptServer.instance.routes.post("/ollama/get_content")
-async def get_content(request):
-    try:
-        data = await request.json()
-        filename = data.get("filename")
-        label_target = data.get("label")
-        
-        if not filename or not label_target:
-            return web.Response(status=400, text="Missing filename or label")
-            
-        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        file_path = os.path.join(elements_dir, filename)
-        
-        full_text = ""
-        
-        if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            if filename == "all.txt":
-                separator = "="*60
-                chunks = content.split(separator)
-                valid_chunks = [c.strip() for c in chunks if c.strip()]
-                
-                # Re-do logic to match label
-                for chunk in valid_chunks:
-                    label = parse_all_txt_chunk(chunk)
-                        
-                    if label == label_target:
-                        lines = chunk.split('\n')
-                        lines_to_keep = [l for l in lines if not l.startswith("Theme:")]
-                        full_text = "\n".join(lines_to_keep).strip()
-                        break
-            else:
-                # Line based
-                lines = content.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if not line: continue
-                    label = parse_single_line(line)
-                    
-                    if label == label_target:
-                        full_text = line
-                        break
-                        
-        return web.json_response({"content": full_text})
-        
-    except Exception as e:
-        print(f"Error serving content: {e}")
-        return web.Response(status=500, text=str(e))
+# Shared configuration - Simplified
+# (No longer used for file mapping, but keeping folder name reference)
 
 # Helper to fetch Ollama models
 def get_ollama_models(url="http://127.0.0.1:11434"):
@@ -563,42 +399,40 @@ class OllamaNbpCharacter:
 
 class OllamaCharacterRestore:
     """
-    Restores full character prompts saved in 'all.txt' or individual element files.
+    Restores full character prompts saved in 'prompts.csv'.
     """
     
     @classmethod
     def INPUT_TYPES(s):
-        # file_list: [all.txt, subject.txt, ...]
-        file_list = ["all.txt"] + list(ELEMENT_FILES.values())
-        
-        # We start with the options from ALL (default)
-        # Note: ComfyUI will execute this ONCE on load. Dynamic updates handled by JS.
-        # We need to pre-populate 'saved_prompts' based on 'all.txt' defaults so it works on first load.
-        
         elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        all_file_path = os.path.join(elements_dir, "all.txt")
+        csv_file_path = os.path.join(elements_dir, "prompts.csv")
+        
         saved_prompts = []
         
-        # --- LOGIC DUPLICATED FROM API FOR INITIAL LOAD ---
-        # (Alternatively we could call a shared function)
-        if os.path.exists(all_file_path):
-             with open(all_file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                separator = "="*60
-                chunks = content.split(separator)
-                for chunk in chunks:
-                    label = parse_all_txt_chunk(chunk)
-                    if label:
+        if os.path.exists(csv_file_path):
+            try:
+                with open(csv_file_path, newline='', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    # We expect columns: Timestamp, SummaryTag, FullPrompt
+                    for row in reader:
+                        ts = row.get("Timestamp", "Unknown Date")
+                        tag = row.get("SummaryTag", "No Tag")
+                        # We use a combined string for the dropdown
+                        # Format: "YYYY-MM-DD HH:MM:SS - sbj-..."
+                        label = f"{ts} - {tag}"
                         saved_prompts.append(label)
+                    
+                    # Reverse to show newest first
+                    saved_prompts.reverse()
+            except Exception as e:
+                print(f"Error reading prompts.csv: {e}")
+                saved_prompts = [f"Error reading CSV: {e}"]
         
         if not saved_prompts:
             saved_prompts = ["No saved prompts found"]
-        saved_prompts.reverse()
-        # ----------------------------------------------------
 
         return {
             "required": {
-                "source_file": (file_list,),
                 "saved_prompts": (saved_prompts,),
             }
         }
@@ -613,53 +447,35 @@ class OllamaCharacterRestore:
     CATEGORY = "Ollama"
     OUTPUT_NODE = True
 
-    def restore(self, source_file, saved_prompts):
+    def restore(self, saved_prompts):
         """
-        Finds the full text corresponding to the selected label from the selected file.
+        Finds the full text corresponding to the selected label from the CSV.
         """
-        if saved_prompts == "No saved prompts found":
+        if saved_prompts == "No saved prompts found" or saved_prompts.startswith("Error"):
              return {"ui": {"text": [""]}, "result": ("",)}
 
         elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        file_path = os.path.join(elements_dir, source_file)
+        csv_file_path = os.path.join(elements_dir, "prompts.csv")
         
         full_text = ""
         
-        if not os.path.exists(file_path):
-             return {"ui": {"text": [f"Error: File {source_file} not found"]}, "result": ("",)}
+        if not os.path.exists(csv_file_path):
+             return {"ui": {"text": ["Error: prompts.csv not found"]}, "result": ("",)}
              
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # LOGIC BRANCH based on source_file
-        if source_file == "all.txt":
-            separator = "="*60
-            chunks = content.split(separator)
-            valid_chunks = [c.strip() for c in chunks if c.strip()]
-            
-            target_label = saved_prompts
-            
-            for chunk in valid_chunks:
-                label = parse_all_txt_chunk(chunk)
-                
-                if label == target_label:
-                    lines = chunk.split('\n')
-                    lines_to_keep = [l for l in lines if not l.startswith("Theme:")]
-                    full_text = "\n".join(lines_to_keep).strip()
-                    break
-        else:
-            # Simple line-based matching for other files
-            target_label = saved_prompts
-            lines = content.split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line: continue
-                
-                label = parse_single_line(line)
+        try:
+            with open(csv_file_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    ts = row.get("Timestamp", "Unknown Date")
+                    tag = row.get("SummaryTag", "No Tag")
+                    label = f"{ts} - {tag}"
                     
-                if label == target_label:
-                    full_text = line
-                    break
+                    if label == saved_prompts:
+                        full_text = row.get("FullPrompt", "")
+                        break
+        except Exception as e:
+            print(f"Error restoring from CSV: {e}")
+            full_text = f"Error: {e}"
 
         return {"ui": {"text": [full_text]}, "result": (full_text,)}
 
