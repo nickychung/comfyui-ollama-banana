@@ -55,7 +55,7 @@ app.registerExtension({
                         await updatePreview();
                         this.setDirtyCanvas(true);
                     };
-                    
+
                     // Trigger once on load if value exists
                     setTimeout(() => {
                         if (promptsWidget.value) {
@@ -73,9 +73,9 @@ app.registerExtension({
 
                 this.setSize([this.size[0], Math.max(this.size[1], 400)]);
             };
-            
+
             // Standard onExecuted to update preview if it runs (backend also returns text)
-             const onExecuted = nodeType.prototype.onExecuted;
+            const onExecuted = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (message) {
                 onExecuted?.apply(this, arguments);
                 if (message && message.text && message.text.length > 0) {
@@ -90,9 +90,60 @@ app.registerExtension({
     },
 });
 
+// Listener for Prompt Saved Event to trigger Auto-Refresh
+api.addEventListener("ollama.prompt_saved", async (event) => {
+    // We could use the data to optimize, but simplest is to just fetch the latest list
+    const graph = app.graph;
+    if (!graph) return;
+
+    // Find all Restore Nodes
+    const restoreNodes = graph.findNodesByType("OllamaCharacterRestore");
+    if (restoreNodes.length === 0) return;
+
+    try {
+        const response = await api.fetchApi("/ollama/get_csv_prompts", { method: "POST" });
+        if (response.ok) {
+            const newOptions = await response.json();
+
+            for (const node of restoreNodes) {
+                const widget = node.widgets?.find((w) => w.name === "saved_prompts");
+                if (widget) {
+                    const currentVal = widget.value;
+                    widget.options.values = newOptions;
+
+                    // If existing value is not in new list (unlikely if strictly adding), valid check
+                    // If "No saved prompts found" was selected, auto-select the new one
+                    if (currentVal === "No saved prompts found" && newOptions.length > 0) {
+                        widget.value = newOptions[0];
+                        // Trigger callback to update preview
+                        if (widget.callback) {
+                            widget.callback(widget.value);
+                        }
+                    }
+
+                    // If the user wants to jump to the NEWEST item automatically:
+                    // newOptions[0] is the newest.
+                    // Let's assume yes, if they are generating, they likely want to see the result.
+                    if (newOptions.length > 0 && newOptions[0] !== currentVal) {
+                        // Only switch if the top item is different (it should be)
+                        // But maybe they are browsing an old one? 
+                        // UX decision: Auto-Switching might be annoying if they are comparing.
+                        // But users usually generate -> restore immediate.
+                        // Let's Auto-Switch for now as per "refresh and get latest" request.
+                        widget.value = newOptions[0];
+                        if (widget.callback) widget.callback(widget.value);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error("[Ollama] Failed to auto-refresh prompts", e);
+    }
+});
+
 app.registerExtension({
     name: "Comfy.OllamaLLMNode",
-     async beforeRegisterNodeDef(nodeType, nodeData, app) {
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "OllamaLLMNode") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {

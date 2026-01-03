@@ -381,6 +381,15 @@ class OllamaNbpCharacter:
                     
                 print(f"[OllamaNbpCharacter] Saved to CSV: {summary_tag}")
                 
+                # Emit event to notify frontend
+                try:
+                    PromptServer.instance.send_sync("ollama.prompt_saved", {
+                         "summary": summary_tag,
+                         "timestamp": timestamp
+                    })
+                except Exception as e:
+                    print(f"Error emitting event: {e}")
+                
             except Exception as e:
                 print(f"[OllamaNbpCharacter] Error saving CSV: {e}")
 
@@ -639,6 +648,31 @@ class OllamaImageSaver:
                 print(f"Error saving image: {e}")
 
         return {"ui": {"images": results}}
+
+# API Route to fetch CSV prompts list (for refresh)
+@PromptServer.instance.routes.post("/ollama/get_csv_prompts")
+async def get_csv_prompts(request):
+    try:
+        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        csv_file_path = os.path.join(elements_dir, "prompts.csv")
+        
+        saved_prompts = []
+        if os.path.exists(csv_file_path):
+             with open(csv_file_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    ts = row.get("Timestamp", "Unknown Date")
+                    tag = row.get("SummaryTag", "No Tag")
+                    label = f"{ts} - {tag}"
+                    saved_prompts.append(label)
+                saved_prompts.reverse()
+        
+        if not saved_prompts:
+            saved_prompts = ["No saved prompts found"]
+            
+        return web.json_response(saved_prompts)
+    except Exception as e:
+         return web.Response(status=500, text=str(e))
 
 # API Route to fetch CSV content for preview
 @PromptServer.instance.routes.post("/ollama/get_csv_content")
