@@ -9,6 +9,7 @@ from PIL import Image
 import io
 import base64
 import json
+import csv
 import time
 from pathlib import Path
 from datetime import datetime
@@ -291,58 +292,25 @@ class OllamaNbpCharacter:
         # Ensure files exists (method below)
         pass # Files kept by INPUT_TYPES mostly, but logic is shared
 
-    def _save_option(self, element_key, content):
-        """Appends a new option to the corresponding text file."""
-        
-        file_path = os.path.join(self.elements_dir, self.ELEMENT_FILES_MAP[element_key])
-        
-        # Check for duplicates (simple check)
-        existing = set()
-        if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f:
-                existing = {line.strip() for line in f if line.strip()}
-        
-        # Avoid saving empty or duplicate
-        if content and content.strip() and content not in existing:
-            with open(file_path, "a", encoding="utf-8") as f:
-                f.write(f"{content}\n")
-            print(f"[OllamaNbpCharacter] Saved new {element_key}: {content}")
-            
-            # Emit event to frontend
-            PromptServer.instance.send_sync("ollama.option_saved", {
-                "element": element_key, 
-                "content": content
-            })
+    def __init__(self):
+        self.elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        # Ensure files exists (method below)
+        pass # Files kept by INPUT_TYPES mostly, but logic is shared
 
     @classmethod
     def INPUT_TYPES(s):
         # Determine path
         elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
         
-        # Helper to ensure files and load opts
+        # Ensure elements dir exists for CSV saving
         if not os.path.exists(elements_dir):
             try:
                 os.makedirs(elements_dir)
             except:
-                pass # Already exists race condition
+                pass 
             
         # Use shared map
         element_map = ELEMENT_FILES
-
-        # Ensure all files exist so we can read them
-        for fname in element_map.values():
-            fpath = os.path.join(elements_dir, fname)
-            if not os.path.exists(fpath):
-                with open(fpath, "w", encoding="utf-8") as f:
-                    pass
-
-        def load_opts(fname):
-            path = os.path.join(elements_dir, fname)
-            opts = []
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    opts = [line.strip() for line in f if line.strip()]
-            return opts
 
         # Get models dynamically
         models = get_ollama_models()
@@ -359,18 +327,14 @@ class OllamaNbpCharacter:
             }
         }
         
-        defaults = ["Follow Theme", "Randomised", "Skip"]
+        # Simple hardcoded options
+        simple_options = ["Follow Theme", "Randomised", "Skip"]
         
-        for key, fname in element_map.items():
-            opts = defaults + load_opts(fname)
-            inputs["required"][f"{key}_input"] = (opts,)
-        
-        # Add granular Save toggles
         for key in element_map.keys():
-            inputs["optional"][f"save_{key}"] = ("BOOLEAN", {"default": False, "label_on": f"Save {key}", "label_off": f"Don't Save {key}"})
+            inputs["required"][f"{key}_input"] = (simple_options,)
             
-        # Add "Save Full Prompt" toggle
-        inputs["optional"]["save_full_prompt"] = ("BOOLEAN", {"default": False, "label_on": "Save Full Prompt to all.txt", "label_off": "Don't Save Full Prompt"})
+        # Unified Save Toggle for CSV
+        inputs["optional"]["save_to_csv"] = ("BOOLEAN", {"default": False, "label_on": "Save to CSV", "label_off": "Don't Save"})
 
         return inputs
 
@@ -419,7 +383,7 @@ class OllamaNbpCharacter:
             elif input_val == "Randomised":
                 to_generate_random.append(key)
             else:
-                # Verbatim from file
+                # Verbatim from file (Should not happen with new inputs, but kept for safety)
                 final_elements[key] = input_val
 
         # 2. Call Ollama if needed
@@ -429,30 +393,19 @@ class OllamaNbpCharacter:
             # Construct system prompt (Text based, robust to chatty models)
             system_instruction = (
                 "You are an expert at creating detailed image generation prompts.\n"
-                "Your task is to generate structured prompt elements with your best imagination based on a user Theme or Randomly.\n"
-                "Describe the character’s clothing in rich and precise detail, either by following the provided Theme or by generating it randomly. The level of detail should adapt to the composition: for close-up or portrait shots, focus only on upper-body attire and omit any lower-body descriptions; for medium or full-body compositions, ensure that lower-body clothing and footwear are clearly and thoroughly described.\n"
-                "Do NOT output conversational fillers like 'Here is the prompt'. Just output the fields.\n\n"
+                "Your task is to generate structured prompt elements based on a user Theme or Randomly.\n"
+                "Describe the character’s clothing in rich and precise detail suited to the composition.\n"
+                "Do NOT output conversational fillers. Just output the fields.\n\n"
                 "DEFINITIONS:\n"
-                "• Subject: Who or what is in the image? Be specific. (e.g., a stoic robot barista with glowing blue optics; a fluffy calico cat wearing a tiny wizard hat).\n"
-                "• Composition: How is the shot framed? (e.g., extreme close-up, wide shot, low angle shot, portrait).\n"
-                "• Action: What is happening? (e.g., brewing a cup of coffee, casting a magical spell, mid-stride running through a field).\n"
-                "• Location: Where does the scene take place? (e.g., a futuristic cafe on Mars, a cluttered alchemist's library, a sun-drenched meadow at golden hour).\n"
-                "• Style: What is the overall aesthetic? (e.g., 3D animation, film noir, watercolor painting, photorealistic, 1990s product photography).\n"
-                "• Editing Instructions: For modifying an existing image, be direct and specific. (e.g., change the man's tie to green, remove the car in the background)\n"
-                "• Camera and lighting details: Direct the shot like a cinematographer. (e.g., \"A low-angle shot with a shallow depth of field (f/1.8),\" \"Golden hour backlighting creating long shadows,\" \"Cinematic color grading with muted teal tones.\")\n"
-                "• Specific text integration: Clearly state what text should appear and how it should look. (e.g., \"The headline 'URBAN EXPLORER' rendered in bold, white, sans-serif font at the top.\")\n"
-                "• Factual constraints (for diagrams): Specify the need for accuracy and ensure your inputs themselves are factual (e.g., \"A scientifically accurate cross-section diagram,\" \"Ensure historical accuracy for the Victorian era.\").\n"
-                "\n"
-                "Example:\n"
-                "Composition: A photorealistic close-up portrait, framed from the chest to the top of the head.\n"
-                "Subject: A young woman with pale skin and a very slender, skinny build with a small waist. She is wearing a black satin corset with mesh panels and subtle leather strapping details, accessorized with a simple black velvet choker.\n"
-                "Action: She is seated at a cluttered antique vanity table. Her body is turned away, but she turns her head over her shoulder to look directly into the camera with a sultry, confident gaze. One hand rests on the aged wooden table near a perfume bottle.\n"
-                "Location: A dimly lit, bohemian bedroom in Paris. The background consists of a warm bokeh of tarnished silver hand-mirrors, vintage cosmetics, and heavy, dark tapestries.\n"
-                "Style: Photorealistic, cinematic, and ultra-high resolution (8k). The aesthetic should mimic the look of Kodak Portra 400 film.\n"
-                "Editing Instructions: N/A\n"
-                "Camera and lighting details: Shot on Kodak Portra 400 film. The scene is lit by the warm, soft glow of a vintage desk lamp on the vanity, creating deep shadows and intimate highlights on her décolletage and the metallic hair highlights.\n"
-                "Specific text integration: N/A\n"
-                "Factual constraints (for diagrams): N/A\n"
+                "• Subject: Who or what is in the image? (e.g. A robot barista).\n"
+                "• Composition: Framing (e.g. Extreme close-up).\n"
+                "• Action: What is happening?\n"
+                "• Location: Where is it?\n"
+                "• Style: Aesthetic style.\n"
+                "• Editing Instructions: Direct edits.\n"
+                "• Camera and lighting details: Cinematography.\n"
+                "• Specific text integration: Text content.\n"
+                "• Factual constraints: Accuracy requirements.\n"
                 "\n"
             )
             
@@ -476,7 +429,6 @@ class OllamaNbpCharacter:
                 "prompt": system_instruction + user_instruction,
                 "stream": False,
                 "keep_alive": f"{keep_alive}m"
-                # Removed "format": "json" to allow natural text generation
             }
             
             if seed is not None:
@@ -490,14 +442,10 @@ class OllamaNbpCharacter:
                 
                 print(f"Ollama Raw Output: {content}")
 
-                # Robust Text Extraction using Regex
-                # We look for "Key: Value" or "Key:\nValue" patterns
-                
+                # Robust Text Extraction using Regex / Line Logic
                 # Check for each key we requested
-                all_requested = to_generate_theme + to_generate_random
                 
                 # Simple Line Parser Strategy
-                # Split by newlines, identify lines that start with a known header
                 lines = content.split('\n')
                 current_key = None
                 buffer = []
@@ -507,7 +455,6 @@ class OllamaNbpCharacter:
                         generated_data[k] = " ".join(buf).strip()
                 
                 # Create a lookup for headers to keys
-                # e.g. "Subject" -> "subject", "Subject:" -> "subject"
                 header_map = {}
                 for k, v in display_names.items():
                     header_map[v.lower()] = k
@@ -518,24 +465,16 @@ class OllamaNbpCharacter:
                     if not line:
                         continue
                         
-                    # Check if this line starts with a known header
-                    # Sort headers by length descending to match longest first ("Camera..." vs "Camera")
                     is_header = False
                     line_lower = line.lower()
                     
                     for header_str, key_id in header_map.items():
-                        # We check if line STARTS with header_str (case insensitive match logic)
-                        # clean check:
                         if line_lower.startswith(header_str.lower()):
-                            # It's a header line. Save previous buffer.
                             save_buffer(current_key, buffer)
                             current_key = key_id
                             buffer = []
                             
-                            # Content might be on the same line "Subject: Robot"
-                            # Strip the header part
                             remainder = line[len(header_str):].strip()
-                            # remove leading colon if header_str didn't have it (fuzzy match)
                             if remainder.startswith(":"):
                                 remainder = remainder[1:].strip()
                             
@@ -545,47 +484,21 @@ class OllamaNbpCharacter:
                             break
                     
                     if not is_header:
-                        # Append to current buffer if we have a key
                         if current_key:
                             buffer.append(line)
                             
-                # Save the last one
                 save_buffer(current_key, buffer)
 
             except Exception as e:
                 print(f"Ollama API Error: {e}")
                 
-        # 3. Save Logic
-        for key in self.ELEMENT_INPUTS:
-            was_generated = (key in to_generate_theme) or (key in to_generate_random)
-            
-            if was_generated and key in generated_data:
-                should_save = kwargs.get(f"save_{key}", False)
-                if should_save:
-                    self._save_option(key, generated_data[key])
-        
-        # 3b. Save Full Prompt Logic
-        if kwargs.get("save_full_prompt", False):
-            all_file_path = os.path.join(self.elements_dir, "all.txt")
-            
-            # Simple separator
-            separator = "\n" + "="*60 + "\n"
-            
-            # Create if missing
-            if not os.path.exists(all_file_path):
-                with open(all_file_path, "w", encoding="utf-8") as f:
-                    pass
-            
-            pass
-
-        # 4. Assemble Final Prompt
+        # 3. Assemble Final Prompt & Generate Summary Tag
         for key in to_generate_theme + to_generate_random:
             if key in generated_data:
                 final_elements[key] = generated_data[key]
             else:
                  final_elements[key] = ""
 
-        # Order matters
         prompt_parts = []
         for key in self.ELEMENT_INPUTS:
             if key in final_elements:
@@ -594,23 +507,55 @@ class OllamaNbpCharacter:
                 if val and val.strip():
                     prompt_parts.append(f"{name}: {val}")
         
-        
         full_text = "\n".join(prompt_parts)
         
-        # 5. Save Full Prompt (Moved here to have access to full_text)
-        if kwargs.get("save_full_prompt", False):
-            all_file_path = os.path.join(self.elements_dir, "all.txt")
-            separator = "\n" + "="*60 + "\n"
-            
+        # 4. Save to CSV Logic
+        if kwargs.get("save_to_csv", False):
             try:
-                with open(all_file_path, "a", encoding="utf-8") as f:
-                    f.write(separator)
-                    f.write(f"Theme: {theme}\n") # context
-                    f.write(full_text)
-                    f.write("\n")
-                print(f"[OllamaNbpCharacter] Saved full prompt to all.txt")
+                # Generate Summary Tag
+                # tag format: sbj-{sub}_loc-{loc}_thm-{thm}_act-{act}
+                
+                def get_tag_words(text):
+                    if not text: return "na"
+                    # simplistic: take first 2 alphanumeric words
+                    words = [w for w in re.findall(r'\w+', text.lower()) if len(w) > 2] # filter tiny words
+                    return "_".join(words[:2]) if words else "na"
+
+                sbj_tag = get_tag_words(final_elements.get("subject", ""))
+                loc_tag = get_tag_words(final_elements.get("location", ""))
+                
+                # Theme is explicit output or the input theme? 
+                # Request asked for "thm_ follows the description of theme". 
+                # We interpret this as the user's input theme generally, unless 'theme' was a generated field?
+                # Actually 'theme' is an input parameter 'theme'.
+                thm_tag = get_tag_words(theme)
+                
+                act_tag = get_tag_words(final_elements.get("action", ""))
+                
+                summary_tag = f"sbj-{sbj_tag}_loc-{loc_tag}_thm-{thm_tag}_act-{act_tag}"
+                
+                csv_file_path = os.path.join(self.elements_dir, "prompts.csv")
+                file_exists = os.path.exists(csv_file_path)
+                
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                with open(csv_file_path, mode='a', newline='', encoding='utf-8') as csvfile:
+                    fieldnames = ['Timestamp', 'SummaryTag', 'FullPrompt']
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+                    if not file_exists:
+                        writer.writeheader()
+
+                    writer.writerow({
+                        'Timestamp': timestamp, 
+                        'SummaryTag': summary_tag, 
+                        'FullPrompt': full_text
+                    })
+                    
+                print(f"[OllamaNbpCharacter] Saved to CSV: {summary_tag}")
+                
             except Exception as e:
-                print(f"[OllamaNbpCharacter] Error saving to all.txt: {e}")
+                print(f"[OllamaNbpCharacter] Error saving CSV: {e}")
 
         print(f"Ollama NBP Character Final: {full_text}")
         
