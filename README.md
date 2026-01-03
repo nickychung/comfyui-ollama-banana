@@ -5,7 +5,7 @@ A suite of ComfyUI nodes integrating **Ollama** for Nana Banana Pro - intelligen
 ## Features
 
 - **Local LLM Integration**: Works with any model running on [Ollama](https://ollama.com) (Llama 3, Mistral, Llava, etc.).
-- **Ollama NBP Character**: A powerful node for generating structured, consistent character prompts (Subject, Costume, Location, Action) with **CSV Logging**.
+- **Ollama NBP Character**: A powerful node for generating structured, consistent character prompts based on Nana Banana Pro structure (Subject, Costume, Location, Action) with **CSV Logging**.
 - **Smart History**: Auto-saves prompts to a CSV file. The **Character Restore** node instantly syncs with this history, allowing you to browse and restore previous prompts with a live preview.
 - **Vision-Aware Saving**: The **Ollama Image Saver** uses vision models (like LLaVA) to analyze your image and automatically generate descriptive filenames (e.g., `sbj-robot_loc-mars_act-running.png`).
 
@@ -46,11 +46,14 @@ A simple, general-purpose node for chatting with Ollama.
     cd comfyui-ollama-banana
     pip install -r requirements.txt
     ```
+    **NOTE**: if you are using portable verison of ComfyUI, you need to run `pip install -r requirements.txt` in the ComfyUI folder - ComfyUI/python_embeded
+    
+    
 4.  **Restart ComfyUI**.
 
 ## Usage Tips
 
-- **Vision Models**: For the Image Saver to work, you **must** have a vision-capable model selected (e.g., `llava`). If you pick a text-only model, it will fail to describe the image.
+- **Vision Models**: For the Image Saver to work, you **must** have a vision-capable model selected (e.g., `Qwen3-vl:8b`). If you pick a text-only model, it will fail to describe the image.
 - **Ollama URL**: Defaults to `http://127.0.0.1:11434`. Ensure Ollama is running in the background.
 
 ## License
