@@ -113,9 +113,6 @@ class OllamaNbpCharacter:
     Supports 9 structured elements with persistence and dynamic generation.
     """
     
-    # Use shared map
-    ELEMENT_FILES_MAP = ELEMENT_FILES
-
     # Map friendly names to UI input names
     ELEMENT_INPUTS = [
         "subject", "composition", "action", "location", "style", 
@@ -125,28 +122,22 @@ class OllamaNbpCharacter:
     
     def __init__(self):
         self.elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        # Ensure files exists (method below)
-        pass # Files kept by INPUT_TYPES mostly, but logic is shared
-
-    def __init__(self):
-        self.elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        # Ensure files exists (method below)
-        pass # Files kept by INPUT_TYPES mostly, but logic is shared
+        # Ensure elements dir exists
+        if not os.path.exists(self.elements_dir):
+            try:
+                os.makedirs(self.elements_dir)
+            except:
+                pass
 
     @classmethod
     def INPUT_TYPES(s):
-        # Determine path
+        # elements_dir logic moved/redundant but needed for CSV check
         elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
-        
-        # Ensure elements dir exists for CSV saving
         if not os.path.exists(elements_dir):
-            try:
+            try: 
                 os.makedirs(elements_dir)
-            except:
-                pass 
-            
-        # Use shared map
-        element_map = ELEMENT_FILES
+            except: 
+                pass
 
         # Get models dynamically
         models = get_ollama_models()
@@ -166,7 +157,7 @@ class OllamaNbpCharacter:
         # Simple hardcoded options
         simple_options = ["Follow Theme", "Randomised", "Skip"]
         
-        for key in element_map.keys():
+        for key in s.ELEMENT_INPUTS:
             inputs["required"][f"{key}_input"] = (simple_options,)
             
         # Unified Save Toggle for CSV
