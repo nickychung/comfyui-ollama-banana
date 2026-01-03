@@ -640,6 +640,43 @@ class OllamaImageSaver:
 
         return {"ui": {"images": results}}
 
+# API Route to fetch CSV content for preview
+@PromptServer.instance.routes.post("/ollama/get_csv_content")
+async def get_csv_content(request):
+    try:
+        data = await request.json()
+        label_target = data.get("label")
+        
+        if not label_target:
+             return web.Response(status=400, text="Missing label")
+             
+        elements_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "elements")
+        csv_file_path = os.path.join(elements_dir, "prompts.csv")
+        
+        full_text = ""
+        
+        if os.path.exists(csv_file_path):
+            try:
+                with open(csv_file_path, newline='', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        ts = row.get("Timestamp", "Unknown Date")
+                        tag = row.get("SummaryTag", "No Tag")
+                        label = f"{ts} - {tag}"
+                        
+                        if label == label_target:
+                            full_text = row.get("FullPrompt", "")
+                            break
+            except Exception as e:
+                print(f"Error reading CSV for preview: {e}")
+                full_text = f"Error: {e}"
+                
+        return web.json_response({"content": full_text})
+        
+    except Exception as e:
+        print(f"Error serving CSV content: {e}")
+        return web.Response(status=500, text=str(e))
+
 NODE_CLASS_MAPPINGS = {
     "OllamaLLMNode": OllamaLLMNode,
     "OllamaNbpCharacter": OllamaNbpCharacter,

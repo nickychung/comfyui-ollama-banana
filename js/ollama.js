@@ -1,81 +1,11 @@
 import { app } from "../../scripts/app.js";
 import { ComfyWidgets } from "../../scripts/widgets.js";
-
-app.registerExtension({
-    name: "Comfy.OllamaLLMNode",
-    async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "OllamaLLMNode") {
-            // 1. Add the widget immediately when the node is created
-            const onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function () {
-                onNodeCreated?.apply(this, arguments);
-
-                // Create the widget if it doesn't exist
-                if (!this.widgets || !this.widgets.find(w => w.name === "generated_text")) {
-                    // Use ComfyWidgets to create a DOM-based text widget (like the prompt box)
-                    // Signature: STRING(node, inputName, inputData, app)
-                    const w = ComfyWidgets.STRING(this, "generated_text", ["STRING", { multiline: true }], app).widget;
-
-                    // Now inputEl should be available because it's a DOM widget
-                    w.inputEl.readOnly = true;
-                    w.inputEl.style.opacity = 0.6;
-                }
-
-                // Resize node to be tall enough for output
-                this.setSize([this.size[0], Math.max(this.size[1], 300)]);
-            };
-
-            // 2. Update the widget when the node executes
-            const onExecuted = nodeType.prototype.onExecuted;
-            nodeType.prototype.onExecuted = function (message) {
-                onExecuted?.apply(this, arguments);
-
-                if (message && message.text && message.text.length > 0) {
-                    const text = message.text[0];
-                    const widget = this.widgets?.find((w) => w.name === "generated_text");
-
-                    if (widget) {
-                        widget.value = text;
-                    }
-
-                    this.onResize?.(this.size);
-                }
-            };
-        }
-    },
-});
-
 import { api } from "../../scripts/api.js";
 
-api.addEventListener("ollama.option_saved", (event) => {
-    const { element, content } = event.detail;
-    if (!element || !content) return;
-
-    // Map element key to input name (e.g., "subject" -> "subject_input")
-    const widgetName = `${element}_input`;
-
-    // Find all OllamaNbpCharacter nodes
-    const graph = app.graph;
-    if (!graph) return;
-
-    graph.findNodesByType("OllamaNbpCharacter").forEach((node) => {
-        const widget = node.widgets?.find((w) => w.name === widgetName);
-        if (widget) {
-            // Check if it's a combo/dropdown widget
-            if (widget.type === "combo" || Array.isArray(widget.options?.values)) {
-                const values = widget.options.values;
-                // Add if not exists
-                if (!values.includes(content)) {
-                    values.push(content);
-                    // Optionally set it as current value?
-                    // user might prefer it stays on what it was, or switches.
-                    // For now, just adding it to the list is safer.
-                    console.log(`[Ollama] Updated ${widgetName} with new option:`, content);
-                }
-            }
-        }
-    });
-});
+// Extension for OllamaNbpCharacter (Auto-refresh dropdowns if we add back saving?)
+// Currently we don't have dynamic saving to the CSV via API, only via execution. 
+// So the "ollama.option_saved" event is not emitted/handled in the same way.
+// We can leave NBP alone or implement a mechanism later.
 
 app.registerExtension({
     name: "Comfy.OllamaCharacterRestore",
@@ -85,15 +15,14 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
 
-                const sourceWidget = this.widgets.find((w) => w.name === "source_file");
                 const promptsWidget = this.widgets.find((w) => w.name === "saved_prompts");
 
                 // Helper to update preview text
                 const updatePreview = async () => {
-                    const fileVal = sourceWidget?.value;
                     const labelVal = promptsWidget?.value;
 
-                    if (!fileVal || !labelVal) return;
+                    if (!labelVal) return;
+                    if (labelVal === "No saved prompts found") return;
 
                     // Find or create preview widget
                     let previewWidget = this.widgets.find(w => w.name === "preview_text");
@@ -105,9 +34,9 @@ app.registerExtension({
                     }
 
                     try {
-                        const response = await api.fetchApi("/ollama/get_content", {
+                        const response = await api.fetchApi("/ollama/get_csv_content", {
                             method: "POST",
-                            body: JSON.stringify({ filename: fileVal, label: labelVal }),
+                            body: JSON.stringify({ label: labelVal }),
                         });
 
                         if (response.ok) {
@@ -121,49 +50,16 @@ app.registerExtension({
                     }
                 };
 
-                if (sourceWidget && promptsWidget) {
-                    // Helper to fetch options and sync widgets
-                    const syncOptions = async (filename, preserveValue = true) => {
-                        if (!filename) return;
-                        try {
-                            const response = await api.fetchApi("/ollama/get_options", {
-                                method: "POST",
-                                body: JSON.stringify({ filename: filename }),
-                            });
-
-                            if (response.ok) {
-                                const options = await response.json();
-                                promptsWidget.options.values = options;
-
-                                let currentVal = promptsWidget.value;
-                                if (!preserveValue || !options.includes(currentVal)) {
-                                    if (options.length > 0) {
-                                        promptsWidget.value = options[0];
-                                    } else {
-                                        promptsWidget.value = "";
-                                    }
-                                }
-
-                                await updatePreview();
-                                this.setDirtyCanvas(true);
-                            }
-                        } catch (error) {
-                            console.error("[Ollama] Failed to sync options:", error);
-                        }
-                    };
-
-                    sourceWidget.callback = async (value) => {
-                        await syncOptions(value, false);
-                    };
-
+                if (promptsWidget) {
                     promptsWidget.callback = async (value) => {
                         await updatePreview();
                         this.setDirtyCanvas(true);
                     };
-
+                    
+                    // Trigger once on load if value exists
                     setTimeout(() => {
-                        if (sourceWidget && sourceWidget.value) {
-                            syncOptions(sourceWidget.value, true);
+                        if (promptsWidget.value) {
+                            updatePreview();
                         }
                     }, 100);
                 }
@@ -177,8 +73,9 @@ app.registerExtension({
 
                 this.setSize([this.size[0], Math.max(this.size[1], 400)]);
             };
-
-            const onExecuted = nodeType.prototype.onExecuted;
+            
+            // Standard onExecuted to update preview if it runs (backend also returns text)
+             const onExecuted = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (message) {
                 onExecuted?.apply(this, arguments);
                 if (message && message.text && message.text.length > 0) {
@@ -186,6 +83,34 @@ app.registerExtension({
                     if (widget) {
                         widget.value = message.text[0];
                     }
+                    this.onResize?.(this.size);
+                }
+            };
+        }
+    },
+});
+
+app.registerExtension({
+    name: "Comfy.OllamaLLMNode",
+     async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData.name === "OllamaLLMNode") {
+            const onNodeCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                onNodeCreated?.apply(this, arguments);
+                if (!this.widgets || !this.widgets.find(w => w.name === "generated_text")) {
+                    const w = ComfyWidgets.STRING(this, "generated_text", ["STRING", { multiline: true }], app).widget;
+                    w.inputEl.readOnly = true;
+                    w.inputEl.style.opacity = 0.6;
+                }
+                this.setSize([this.size[0], Math.max(this.size[1], 300)]);
+            };
+            const onExecuted = nodeType.prototype.onExecuted;
+            nodeType.prototype.onExecuted = function (message) {
+                onExecuted?.apply(this, arguments);
+                if (message && message.text && message.text.length > 0) {
+                    const text = message.text[0];
+                    const widget = this.widgets?.find((w) => w.name === "generated_text");
+                    if (widget) { widget.value = text; }
                     this.onResize?.(this.size);
                 }
             };
