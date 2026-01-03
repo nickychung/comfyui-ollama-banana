@@ -357,8 +357,8 @@ class OllamaNbpCharacter:
                 
                 summary_prompt = (
                     "Analyze the following character description and extract 4 key elements: Theme, Subject, Location, and Action.\n"
-                    "For each element, summarize it into exactly TWO words.\n"
-                    "Format the output string EXACTLY like this: thm-word_word_sbj-word_word_loc-word_word_act-word_word\n"
+                    "For each element, summarize it into exactly THREE words.\n"
+                    "Format the output string EXACTLY like this: thm-word_word_word_sbj-word_word_word_loc-word_word_word_act-word_word_word\n"
                     "Use lowercase only. Use underscores between words in a pair. Use hyphens between the tag name and the words.\n"
                     "Do NOT output anything else. No intro, no explanation.\n\n"
                     f"Description:\n{full_text}\n"
