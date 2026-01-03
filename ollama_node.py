@@ -556,7 +556,8 @@ class OllamaImageSaver:
             "optional": {
                 "filename_prefix": ("STRING", {"default": ""}),
                 "add_metadata": ("BOOLEAN", {"default": True, "label_on": "Add Metadata (WxH, Date)", "label_off": "No Metadata"}),
-            }
+            },
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ()
