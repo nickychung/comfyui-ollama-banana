@@ -1,6 +1,6 @@
 # ComfyUI Ollama Banana
 
-A suite of ComfyUI nodes integrating **Ollama** for intelligent prompting, character generation, and image management. Specifically designed for local LLM workflows ensuring privacy and no API costs.
+A suite of ComfyUI nodes integrating **Ollama** for Nana Banana Pro - intelligent prompting, character generation, and image management. Specifically designed for local LLM workflows ensuring privacy and no API costs.
 
 ## Features
 
