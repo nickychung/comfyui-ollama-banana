@@ -682,11 +682,46 @@ class OllamaImageSaver:
             full_path = os.path.join(folder_path, filename)
             
             metadata = PngImagePlugin.PngInfo()
+            
+            # Helper: Recursive Masking of Sensitive Keys
+            def sanitize_metadata(data):
+                if isinstance(data, dict):
+                    new_data = {}
+                    for k, v in data.items():
+                        # Check recursively
+                        cleaned_v = sanitize_metadata(v)
+                        
+                        # Check key name for sensitive terms
+                        k_lower = k.lower()
+                        sensitive_terms = ["api_key", "apikey", "secret", "token", "password", "auth", "key"]
+                        
+                        # Special logic: "key" is very generic, so usually we look for exact "api_key" etc.
+                        # But if the user says "API KEY value is also stored", let's be aggressive on specific known patterns.
+                        # Pattern matching: specific keys usually found in AI nodes.
+                        if any(term in k_lower for term in ["api_key", "apikey", "auth_token", "access_token"]):
+                            new_data[k] = "***MASKED***"
+                        # Also handle "google_api_key", "openai_key" etc.
+                        elif "_key" in k_lower and "model" not in k_lower and "hotkey" not in k_lower: 
+                            # heuristic to avoid masking 'hotkeys' or 'model_key' if that existed.
+                            new_data[k] = "***MASKED***"
+                        else:
+                            new_data[k] = cleaned_v
+                    return new_data
+                    
+                elif isinstance(data, list):
+                    return [sanitize_metadata(item) for item in data]
+                else:
+                    return data
+
             if prompt is not None:
-                metadata.add_text("prompt", json.dumps(prompt))
+                # Sanitize the full prompt structure
+                safe_prompt = sanitize_metadata(prompt)
+                metadata.add_text("prompt", json.dumps(safe_prompt))
+                
             if extra_pnginfo is not None:
-                for x in extra_pnginfo:
-                    metadata.add_text(x, json.dumps(extra_pnginfo[x]))
+                safe_extra = sanitize_metadata(extra_pnginfo)
+                for x in safe_extra:
+                    metadata.add_text(x, json.dumps(safe_extra[x]))
 
             try:
                 img.save(full_path, format="PNG", pnginfo=metadata, optimize=False, compress_level=4)
